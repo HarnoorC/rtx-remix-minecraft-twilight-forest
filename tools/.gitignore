@@ -1,0 +1,11 @@
+# Locally staged fixtures and resource packs
+assets/worlds/
+assets/resourcepacks/
+# Tracy binaries fetched by rtx_tools.benchmark.tracy
+/tracy-tools/
+# Shared Python environment; uv.lock stays tracked
+/.venv/
+# Launcher UI state, machine-local environment variables, and configuration
+/.launcher-state.json
+/.env
+/config.local.json

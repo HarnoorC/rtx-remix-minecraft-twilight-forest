@@ -1,0 +1,46 @@
+[project]
+name = "rtx-remix-minecraft-tools"
+version = "0.1.0"
+description = "Developer, benchmark, and profiling tools for RTX Remix Minecraft."
+requires-python = ">=3.15"
+dependencies = [
+    "numpy>=2.5",
+    "pillow>=12.3",
+]
+
+[project.scripts]
+rtx = "rtx_tools.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.13.0,<0.14.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.17",
+    "ty>=0.0.33",
+    "pytest>=9.1",
+    "jsonschema>=4.26",
+]
+
+[tool.uv]
+required-version = ">=0.13.0"
+
+[tool.uv.build-backend]
+module-name = "rtx_tools"
+
+[tool.ruff]
+target-version = "py315"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+"src/rtx_tools/benchmark/dashboard.py" = ["E501"]
+
+[tool.ty.src]
+include = ["src", "tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

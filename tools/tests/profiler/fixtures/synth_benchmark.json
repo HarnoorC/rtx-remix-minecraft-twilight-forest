@@ -1,0 +1,14 @@
+{
+  "metadata": {"gitBranch": "main", "gitCommit": "abc1234", "sessionId": "20260422T120000"},
+  "summary": {
+    "avgFrameTimeMs": 8.3,
+    "minFrameTimeMs": 6.0,
+    "maxFrameTimeMs": 14.0,
+    "p1FrameTimeMs": 12.0,
+    "stddevFrameTimeMs": 1.1,
+    "cvPct": 13.2,
+    "sections": {"Chunk.Gen": {"avgMs": 2.1, "pct": 25.3}, "Chunk.Draw": {"avgMs": 1.5, "pct": 18.1}},
+    "counters": {"Chunk.DrawCalls": {"avg": 420}}
+  },
+  "perFrame": [8300000, 8100000, 8500000]
+}

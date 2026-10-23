@@ -1,0 +1,162 @@
+name: Bug report
+description: Something in the mod is broken, renders wrongly, or crashes.
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **The mod or RTX Remix?** This form is for the mod: something in the
+        world missing, extra, misplaced, or with the wrong material or light,
+        the sky, water, or weather, the RTX Remix Settings screen, `/rtx`
+        commands and keys, lighting profiles, the installer, and crashes.
+        Denoiser, DLSS, or frame-generation artifacts, Remix's own menus
+        (Alt+X and RTX Remix Graphics Settings), and anything that also
+        happens in another RTX Remix game go to the
+        [RTX Remix runtime tracker](https://github.com/NVIDIAGameWorks/rtx-remix/issues/new?template=runtime_bug_report.yml).
+        There, say you are playing RTX Remix for Minecraft and give the
+        `DXVK_Remix:` line from the top of `rtx-remix\logs\remix-dxvk.log` as
+        the version. Not sure which it is? File it here, and we will move it.
+
+        Rendering problems are hard to act on without specifics, so please
+        fill in every field.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: >-
+        The shortest path from launching the game to seeing the problem.
+        Include the world, the place, the time of day, and the weather when
+        they matter.
+      placeholder: |
+        1. Launch the NVIDIA RTX Remix for Minecraft profile
+        2. ...
+    validations:
+      required: true
+
+  - type: input
+    id: mod-file
+    attributes:
+      label: Mod file name
+      description: >-
+        The full file name from the mods folder in your game directory. It
+        carries the version and the build, and identifies the exact code.
+      placeholder: rtx-remix-renderer-0.1.0-<stamp>-<hash>.jar
+    validations:
+      required: true
+
+  - type: dropdown
+    id: launcher
+    attributes:
+      label: Launcher
+      options:
+        - Prism Launcher
+        - Microsoft launcher
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: architecture
+    attributes:
+      label: Windows architecture
+      description: >-
+        Run `systeminfo | findstr "System Type"` in a Command Prompt.
+      options:
+        - x64-based PC
+        - ARM64-based PC
+    validations:
+      required: true
+
+  - type: input
+    id: gpu
+    attributes:
+      label: GPU and driver version
+      description: From the NVIDIA app, or `nvidia-smi` in a Command Prompt.
+      placeholder: GeForce RTX 4080, driver 000.00
+    validations:
+      required: true
+
+  - type: dropdown
+    id: display-gpu
+    attributes:
+      label: On a laptop, which chip drives the display
+      description: >-
+        Windows Settings, Display, Graphics. A display driven by the built-in
+        graphics chip explains a large class of reports on its own.
+      options:
+        - Not a laptop
+        - The NVIDIA GPU
+        - The built-in graphics chip
+        - Not sure
+    validations:
+      required: true
+
+  - type: input
+    id: resource-packs
+    attributes:
+      label: Resource packs in use
+      description: >-
+        From Options, Resource Packs, top to bottom. Material and lighting bugs
+        depend on this. Say "built-in baseline only" if you have not added any.
+    validations:
+      required: true
+
+  - type: textarea
+    id: other-mods
+    attributes:
+      label: Other mods installed
+      description: >-
+        Every other file in the mods folder, or "none". Compatibility with
+        other mods has had limited testing, so this is often the cause. If
+        the problem goes away with the other mods removed, say so.
+    validations:
+      required: true
+
+  - type: textarea
+    id: rtx-status
+    attributes:
+      label: Output of /rtx status
+      description: Type it in chat and copy the lines out of the chat window.
+      render: text
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: >-
+        Attach two files from the game directory as files rather than pasting
+        part of them: `logs\latest.log` and `rtx-remix\logs\remix-dxvk.log`.
+    validations:
+      required: true
+
+  - type: textarea
+    id: crash-files
+    attributes:
+      label: Crash files
+      description: >-
+        For a crash, zip and attach whatever the game directory has of the
+        `crash` folder, the `crash-reports` folder, and any `hs_err_pid*.log`.
+    validations:
+      required: false
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots and an RTX on and off pair
+      description: >-
+        For a visual bug, attach two screenshots taken from the same position:
+        one as you found it, then one after `/rtx off`. The pair shows whether
+        the fault is in the world or in the path tracer.
+    validations:
+      required: false

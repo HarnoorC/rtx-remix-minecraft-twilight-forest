@@ -1,0 +1,36 @@
+{
+    "sdk": {
+        "autoRestage": true,
+        "tracyRemote": "rtx-remix-external"
+    },
+    "world": {
+        "name": "RTXDemo",
+        "version": "v0.11.1",
+        "camera": "benchmark",
+        "remote": "rtx-remix-external"
+    },
+    "resourcePack": {
+        "mode": "pinned",
+        "name": "texture",
+        "version": "0.58.0",
+        "package": "rtx_remix_minecraft_texture_resourcepack",
+        "remote": "rtx-remix-external",
+        "stageName": "rtx-remix-art"
+    },
+    "render": {
+        "fullscreen": false,
+        "overrideWidth": 1920,
+        "overrideHeight": 1080,
+        "renderDistance": 32,
+        "simulationDistance": 12,
+        "graphicsMode": 1,
+        "fov": 90,
+        "maxFps": 260,
+        "vsync": false,
+        "modSettings": {
+            "dist.light": 0,
+            "dist.entity": 0,
+            "light.reach": 192
+        }
+    }
+}

@@ -1,0 +1,17 @@
+blank_issues_enabled: false
+contact_links:
+  - name: RTX Remix runtime bug
+    url: https://github.com/NVIDIAGameWorks/rtx-remix/issues/new?template=runtime_bug_report.yml
+    about: >-
+      Denoiser, DLSS, or frame-generation artifacts, Remix's own menus (Alt+X
+      and RTX Remix Graphics Settings), or a problem that also happens in
+      another RTX Remix game. Not sure which it is? Use the bug report here.
+  - name: RTX Remix runtime feature request
+    url: https://github.com/NVIDIAGameWorks/rtx-remix/issues/new?template=runtime_feature_report.yml
+    about: >-
+      Changes to path tracing, denoising, or upscaling themselves.
+  - name: Security vulnerability
+    url: https://www.nvidia.com/en-us/security/
+    about: >-
+      Report vulnerabilities through NVIDIA PSIRT rather than as a public
+      issue. See SECURITY.md in this repository.

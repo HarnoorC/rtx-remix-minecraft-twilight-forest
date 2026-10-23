@@ -1,0 +1,24 @@
+# Formatting baseline for new edits in every editor. Files git does not pin
+# via .gitattributes keep whatever line endings they already have on disk.
+root = true
+
+[*]
+charset = utf-8
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+[*.java]
+end_of_line = lf
+[*.{yml,yaml}]
+indent_size = 2
+[*.md]
+# Markdown gives a trailing double space meaning.
+trim_trailing_whitespace = false
+[*.{ps1,bat}]
+end_of_line = crlf
+[packaging/installer.ps1]
+charset = utf-8-bom
+[packaging/licenses/**]
+trim_trailing_whitespace = false
+insert_final_newline = false

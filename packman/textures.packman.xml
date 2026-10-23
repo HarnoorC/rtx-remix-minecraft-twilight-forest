@@ -1,0 +1,11 @@
+<project toolsVersion="7.6">
+  <!-- Runtime textures the mod loads from <gameDir>/textures/. Too large for
+       plain git, so Gradle's fetchRuntimeTextures pulls them into the
+       remix-runtime/textures/ junction before anything stages or packages
+       them. The junction must stay on a path git has never tracked: a
+       checkout of a commit that tracks files under it would write and delete
+       them in the shared package cache. -->
+  <dependency name="runtime-textures" linkPath="../remix-runtime/textures">
+    <package name="rtx_remix_minecraft_runtime_textures" version="1.1.0" />
+  </dependency>
+</project>

@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "kind": "aggregate",
+  "meta": {
+    "branch": "main",
+    "commit": "abc1234",
+    "run": null,
+    "sessionId": "20260422T120000",
+    "artifacts": {
+      "aggregate": "aggregate.json",
+      "manifest": "manifest.json",
+      "ciJobUrl": "https://gitlab.example.com/group/project/-/jobs/123",
+      "runs": [
+        {
+          "run": 1,
+          "tracy": "run_1/profile.tracy",
+          "tracyOutLog": "run_1/profile.tracy.out.log",
+          "tracyErrLog": "run_1/profile.tracy.err.log",
+          "jfr": "run_1/profile.jfr",
+          "csv": "run_1/profile.csv",
+          "tracyBytes": 234024895,
+          "tracyOutLogBytes": 67121,
+          "tracyErrLogBytes": 0,
+          "jfrBytes": 28116724,
+          "csvBytes": 1539209,
+          "benchmark": "run_1/benchmark.json",
+          "profileData": "run_1/profile-data.json"
+        }
+      ]
+    }
+  },
+  "frame": {"avgMs": 8.3, "p1Ms": 12.0, "p99Ms": 12.0, "minMs": 6.0, "maxMs": 14.0,
+            "stddevMs": 1.1, "cvPct": 13.2,
+            "sections": {"Chunk.Gen": {"avgMs": 2.1, "pct": 25.3}, "Chunk.Draw": {"avgMs": 1.5, "pct": 18.1}},
+            "counters": {"Chunk.DrawCalls": {"avg": 420}}},
+  "jfr": {
+    "hotspots": [{"method": "net.minecraft.Foo.bar", "selfMs": 0.8, "totalMs": 1.2, "thread": "Render thread", "package": "net.minecraft"}],
+    "allocations": [{"class": "[B", "site": "FooPool.alloc", "count": 50, "bytes": 2048000}],
+    "phases": [
+      {
+        "phase": "Chunk.Gen",
+        "count": 3,
+        "frames": 3,
+        "totalMs": 6.0,
+        "perFrameMs": 2.0,
+        "avgMs": 2.0,
+        "p50Ms": 2.0,
+        "p95Ms": 2.4,
+        "p99Ms": 2.5,
+        "maxMs": 2.5,
+        "thread": "main",
+        "metrics": {
+          "captureCount": {"avg": 4.0, "max": 6, "count": 3},
+          "dirtyLeaves": {"avg": 2.0, "max": 3, "count": 3}
+        }
+      }
+    ],
+    "gc": {"pauseCountPerSec": 0.5, "p99PauseMs": 12.0, "totalPauseMs": 30.0, "events": []},
+    "locks": [],
+    "threads": []
+  },
+  "tracy": {
+    "zones": [{"name": "Chunk.BFS", "count": 1000, "meanUs": 100.0, "maxUs": 500.0, "totalMs": 100.0}],
+    "gpu": [], "frameMarkers": []
+  },
+  "perRun": []
+}

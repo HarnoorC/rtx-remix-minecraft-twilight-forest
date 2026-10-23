@@ -1,0 +1,322 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://rtx-remix-minecraft/profile-schema.json",
+  "title": "Profile Data Schema",
+  "description": "Library of reusable defs for profile-data.json (single run) and aggregate.json (N-run aggregate). Validate downstream documents against '#/$defs/ProfileData' or '#/$defs/Aggregate'. This file has no implicit top-level validator.",
+  "$defs": {
+    "Meta": {
+      "type": "object",
+      "required": ["branch", "commit", "sessionId"],
+      "properties": {
+        "branch": {"type": "string"},
+        "commit": {"type": "string"},
+        "run": {"type": ["integer", "null"]},
+        "sessionId": {"type": "string"},
+        "sdk": {"$ref": "#/$defs/Sdk"},
+        "artifacts": {"$ref": "#/$defs/Artifacts"}
+      }
+    },
+    "Sdk": {
+      "type": "object",
+      "required": ["contract", "arch", "tracyEnabled"],
+      "properties": {
+        "contract": {"type": "string"},
+        "arch": {"type": "string"},
+        "variant": {"type": "string"},
+        "sourceType": {"type": "string"},
+        "source": {"type": "string"},
+        "sourcePath": {"type": "string"},
+        "stagedAtUtc": {"type": "string"},
+        "stagedBy": {"type": "string"},
+        "sourceGitRoot": {"type": "string"},
+        "sourceGitBranch": {"type": "string"},
+        "sourceGitCommit": {"type": "string"},
+        "sourceGitCommitShort": {"type": "string"},
+        "sourceGitDirty": {"type": "boolean"},
+        "packmanManifest": {"type": "string"},
+        "packmanManifestError": {"type": "string"},
+        "packmanDependency": {"type": "string"},
+        "packmanPackage": {"type": "string"},
+        "packmanReleaseVersion": {"type": "string"},
+        "packmanRequestedVersion": {"type": "string"},
+        "packmanReleasePackage": {"type": "string"},
+        "packmanRequestedPackage": {"type": "string"},
+        "label": {"type": "string"},
+        "sdkDir": {"type": "string"},
+        "sdkDirResolved": {"type": "string"},
+        "dll": {"type": "string"},
+        "dllResolved": {"type": "string"},
+        "dllSizeBytes": {"type": "integer"},
+        "dllModifiedUtc": {"type": "string"},
+        "dllSha256": {"type": "string"},
+        "dllSha256Short": {"type": "string"},
+        "tracyEnabled": {"type": "boolean"}
+      }
+    },
+    "Artifacts": {
+      "type": "object",
+      "properties": {
+        "resultDir": {"type": "string"},
+        "ciResultDir": {"type": "string"},
+        "ciJobUrl": {"type": ["string", "null"]},
+        "aggregate": {"type": "string"},
+        "reportMd": {"type": "string"},
+        "ciAggregate": {"type": "string"},
+        "ciReportMd": {"type": "string"},
+        "runs": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/RunArtifacts"}
+        }
+      }
+    },
+    "RunArtifacts": {
+      "type": "object",
+      "properties": {
+        "run": {"type": "integer"},
+        "tracy": {"type": "string"},
+        "tracyOutLog": {"type": "string"},
+        "tracyErrLog": {"type": "string"},
+        "jfr": {"type": "string"},
+        "tracyBytes": {"type": ["integer", "null"]},
+        "tracyOutLogBytes": {"type": ["integer", "null"]},
+        "tracyErrLogBytes": {"type": ["integer", "null"]},
+        "jfrBytes": {"type": ["integer", "null"]},
+        "benchmark": {"type": "string"},
+        "profileData": {"type": "string"},
+        "ciTracy": {"type": "string"},
+        "ciTracyOutLog": {"type": "string"},
+        "ciTracyErrLog": {"type": "string"},
+        "ciJfr": {"type": "string"},
+        "ciBenchmark": {"type": "string"},
+        "ciProfileData": {"type": "string"}
+      }
+    },
+    "Frame": {
+      "type": "object",
+      "required": ["avgMs", "p1Ms", "p99Ms", "sections", "counters"],
+      "properties": {
+        "avgMs": {"type": "number"},
+        "p1Ms": {"type": "number"},
+        "p99Ms": {"type": "number"},
+        "minMs": {"type": "number"},
+        "maxMs": {"type": "number"},
+        "stddevMs": {"type": "number"},
+        "cvPct": {"type": "number"},
+        "runsTotal": {"type": "integer", "description": "Aggregate only: total runs available before exclusions."},
+        "runsAggregated": {"type": "integer", "description": "Aggregate only: runs included in the headline mean (degenerate runs excluded)."},
+        "excludedRunCount": {"type": "integer", "description": "Aggregate only: runs dropped from the mean for containing a multi-second stall frame."},
+        "excludedRuns": {"type": "array", "description": "Aggregate only: the dropped runs and their worst frame time.", "items": {"type": "object"}},
+        "allRunsDegenerate": {"type": "boolean", "description": "Aggregate only: every run was degenerate, so the mean fell back to all runs."},
+        "sections": {"type": "object", "description": "Section name -> { avgMs, pct } (names are user-defined).", "additionalProperties": {"type": "object"}},
+        "counters": {"type": "object", "description": "Counter name -> { avg } (names are user-defined).", "additionalProperties": {"type": "object"}}
+      }
+    },
+    "Hotspot": {
+      "type": "object",
+      "required": ["method", "selfMs", "totalMs"],
+      "properties": {
+        "method": {"type": "string"},
+        "selfMs": {"type": "number"},
+        "totalMs": {"type": "number"},
+        "thread": {"type": ["string", "null"]},
+        "package": {"type": ["string", "null"]}
+      }
+    },
+    "Allocation": {
+      "type": "object",
+      "required": ["class", "count", "bytes"],
+      "properties": {
+        "class": {"type": "string"},
+        "site": {"type": ["string", "null"]},
+        "count": {"type": "integer"},
+        "bytes": {"type": "integer"}
+      }
+    },
+    "GC": {
+      "type": "object",
+      "required": ["pauseCountPerSec", "p99PauseMs", "events"],
+      "properties": {
+        "pauseCountPerSec": {"type": "number"},
+        "p99PauseMs": {"type": "number"},
+        "totalPauseMs": {"type": "number"},
+        "events": {"type": "array", "description": "Raw JFR GC event objects. Shape not enforced.", "items": {"type": "object"}}
+      }
+    },
+    "Lock": {
+      "type": "object",
+      "required": ["monitor", "waitMs", "count"],
+      "properties": {
+        "monitor": {"type": "string"},
+        "site": {"type": ["string", "null"]},
+        "waitMs": {"type": "number"},
+        "count": {"type": "integer"}
+      }
+    },
+    "ThreadSummary": {
+      "type": "object",
+      "required": ["name", "sampleCount"],
+      "properties": {
+        "name": {"type": "string"},
+        "cpuPct": {"type": "number"},
+        "sampleCount": {"type": "integer"}
+      }
+    },
+    "JavaPhaseMetric": {
+      "type": "object",
+      "required": ["count"],
+      "properties": {
+        "avg": {"type": "number"},
+        "max": {"type": "number"},
+        "count": {"type": "integer"}
+      }
+    },
+    "JavaPhase": {
+      "type": "object",
+      "required": ["phase", "count", "frames", "totalMs", "perFrameMs", "avgMs", "p50Ms", "p95Ms", "p99Ms", "maxMs"],
+      "properties": {
+        "phase": {"type": "string"},
+        "count": {"type": "integer"},
+        "frames": {"type": "integer"},
+        "totalMs": {"type": "number"},
+        "perFrameMs": {"type": ["number", "null"]},
+        "avgMs": {"type": "number"},
+        "p50Ms": {"type": "number"},
+        "p95Ms": {"type": "number"},
+        "p99Ms": {"type": "number"},
+        "maxMs": {"type": "number"},
+        "thread": {"type": ["string", "null"]},
+        "metrics": {
+          "type": "object",
+          "additionalProperties": {"$ref": "#/$defs/JavaPhaseMetric"}
+        }
+      }
+    },
+    "JFRValidation": {
+      "type": "object",
+      "properties": {
+        "valid": {"type": "boolean"},
+        "reason": {"type": "string"},
+        "validRunCount": {"type": "integer"},
+        "totalRunCount": {"type": "integer"}
+      }
+    },
+    "JFRWindow": {
+      "type": ["object", "null"],
+      "properties": {
+        "after": {"type": "string"},
+        "before": {"type": "string"},
+        "source": {"type": "string"},
+        "startMarker": {"type": "string"},
+        "endMarker": {"type": "string"},
+        "runCount": {"type": "integer"}
+      }
+    },
+    "TracyZone": {
+      "type": "object",
+      "required": ["name", "count", "meanUs", "totalMs"],
+      "properties": {
+        "name": {"type": "string"},
+        "count": {"type": "integer"},
+        "meanUs": {"type": "number"},
+        "p99Us": {"type": "number"},
+        "maxUs": {"type": "number"},
+        "totalMs": {"type": "number"}
+      }
+    },
+    "TracyWindow": {
+      "type": ["object", "null"],
+      "properties": {
+        "source": {"type": "string"},
+        "startNs": {"type": "integer"},
+        "endNs": {"type": "integer"},
+        "totalFrames": {"type": "integer"},
+        "selectedFrames": {"type": "integer"},
+        "runCount": {"type": "integer"}
+      }
+    },
+    "TracyHealth": {
+      "type": "object",
+      "required": ["valid", "reason", "warnings"],
+      "properties": {
+        "valid": {"type": "boolean"},
+        "validRunCount": {"type": "integer"},
+        "totalRunCount": {"type": "integer"},
+        "reason": {"type": "string"},
+        "warnings": {"type": "array", "items": {"type": "string"}},
+        "csvQuality": {
+          "type": "object",
+          "properties": {
+            "rows": {"type": "integer"},
+            "namedRows": {"type": "integer"},
+            "totalCount": {"type": "integer"},
+            "anonymousCount": {"type": "integer"},
+            "totalNs": {"type": "integer"},
+            "anonymousNs": {"type": "integer"},
+            "anonymousPct": {"type": "number"},
+            "anonymousCountPct": {"type": "number"}
+          }
+        }
+      }
+    },
+    "JFRBlock": {
+      "type": "object",
+      "required": ["hotspots", "allocations", "gc", "locks", "threads"],
+      "properties": {
+        "valid": {"type": "boolean"},
+        "validation": {"$ref": "#/$defs/JFRValidation"},
+        "window": {"$ref": "#/$defs/JFRWindow"},
+        "hotspots": {"type": "array", "items": {"$ref": "#/$defs/Hotspot"}},
+        "allocations": {"type": "array", "items": {"$ref": "#/$defs/Allocation"}},
+        "phases": {"type": "array", "description": "minecraft.JavaPhase summaries emitted by ProfileScope.", "items": {"$ref": "#/$defs/JavaPhase"}},
+        "frameLedger": {"type": "object", "description": "Summary of minecraft.FrameLedger per-frame accounting events."},
+        "clientTasks": {"type": "object", "description": "Summary of MinecraftClient.render.runTasks task drain and slow task events."},
+        "throwables": {"type": "object", "description": "Summary of JFR Java exception/error throw events when enabled."},
+        "worstFrames": {"type": "object", "description": "Correlated benchmark worst-frame report from JFR phase and ledger events."},
+        "gc": {"$ref": "#/$defs/GC"},
+        "locks": {"type": "array", "items": {"$ref": "#/$defs/Lock"}},
+        "threads": {"type": "array", "items": {"$ref": "#/$defs/ThreadSummary"}}
+      }
+    },
+    "TracyBlock": {
+      "type": "object",
+      "required": ["zones", "gpu", "frameMarkers"],
+      "properties": {
+        "zones": {"type": "array", "items": {"$ref": "#/$defs/TracyZone"}},
+        "gpu": {"type": "array", "items": {"$ref": "#/$defs/TracyZone"}},
+        "frameMarkers": {"type": "array", "description": "Optional per-frame markers emitted by the game. Shape not enforced.", "items": {"type": "object"}},
+        "frames": {"type": "integer"},
+        "window": {"$ref": "#/$defs/TracyWindow"},
+        "csvKind": {"type": ["string", "null"]},
+        "rawEventCount": {"type": ["integer", "null"]},
+        "health": {"$ref": "#/$defs/TracyHealth"}
+      }
+    },
+    "ProfileData": {
+      "type": "object",
+      "required": ["schemaVersion", "kind", "meta", "frame", "jfr", "tracy"],
+      "properties": {
+        "schemaVersion": {"type": "integer", "const": 1},
+        "kind": {"type": "string", "const": "profile-data"},
+        "meta": {"$ref": "#/$defs/Meta"},
+        "frame": {"$ref": "#/$defs/Frame"},
+        "jfr": {"$ref": "#/$defs/JFRBlock"},
+        "tracy": {"$ref": "#/$defs/TracyBlock"},
+        "perFrame": {"type": "array", "description": "Per-frame nanos from benchmark.json (optional; enables HTML frame-time chart).", "items": {"type": "integer"}}
+      }
+    },
+    "Aggregate": {
+      "type": "object",
+      "required": ["schemaVersion", "kind", "meta", "frame", "jfr", "tracy", "perRun"],
+      "properties": {
+        "schemaVersion": {"type": "integer", "const": 1},
+        "kind": {"type": "string", "const": "aggregate"},
+        "meta": {"$ref": "#/$defs/Meta"},
+        "frame": {"$ref": "#/$defs/Frame"},
+        "jfr": {"$ref": "#/$defs/JFRBlock"},
+        "tracy": {"$ref": "#/$defs/TracyBlock"},
+        "perFrame": {"type": "array", "description": "Per-frame nanos from benchmark.json (optional; enables HTML frame-time chart).", "items": {"type": "integer"}},
+        "perRun": {"type": "array", "items": {"$ref": "#/$defs/ProfileData"}}
+      }
+    }
+  }
+}

@@ -1,0 +1,59 @@
+name: Feature request
+description: Suggest something the mod should do that it does not do today.
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Changes to path tracing, denoising, or upscaling themselves belong in
+        the [RTX Remix runtime tracker](https://github.com/NVIDIAGameWorks/rtx-remix/issues/new?template=runtime_feature_report.yml).
+        This form is for what the mod captures from Minecraft and hands to
+        the runtime, its settings screen, its commands, and the lighting
+        profiles a map author writes.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which part of the mod
+      options:
+        - Rendering, what is captured and how it looks
+        - Settings screen
+        - Chat commands and keys
+        - Lighting profiles and zones
+        - Camera paths
+        - Resource pack support
+        - Installer
+        - Documentation
+        - Something else
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do
+      description: >-
+        Describe the situation rather than the solution. What are you building,
+        playing, or capturing, and where does the mod get in the way today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What you would like it to do
+      description: >-
+        If you have a shape in mind, sketch it: the setting, the command, or
+        the file. Screenshots and references from other renderers help.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What you tried instead
+      description: >-
+        Existing settings, commands, conf profiles, or resource-pack tricks you
+        already tried, and why they did not do the job.
+    validations:
+      required: false

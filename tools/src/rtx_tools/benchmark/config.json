@@ -1,0 +1,28 @@
+{
+    "runs": 3,
+    "warmupFrames": 600,
+
+    "profiling": {
+        "tracyJavaMaxDepth": 6,
+        "postResultExitDelaySeconds": 10,
+        "ciPostResultExitDelaySeconds": 300,
+        "exitMode": "systemExit",
+        "postResultProcessWaitSeconds": 180,
+        "tracyDrainStableSeconds": 30,
+        "tracyDrainTimeoutSeconds": 270,
+        "tracyDrainPollSeconds": 5,
+        "tracyDrainChangeThresholdBytes": 8192,
+        "benchmarkHeartbeatStallSeconds": 90,
+        "benchmarkStartupStallSeconds": 480,
+        "benchmarkStallPreviewSeconds": 45
+    },
+
+    "screenshots": {
+        "count": 5,
+        "frames": []
+    },
+
+    "interRunCooldownSeconds": 0,
+    "pollTimeoutSeconds": 600,
+    "pollIntervalSeconds": 5
+}

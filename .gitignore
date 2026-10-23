@@ -1,0 +1,70 @@
+# Build outputs
+build/
+bin/
+.gradle/
+out/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.code-workspace
+
+# Minecraft run directories
+run/
+runs/
+/run-prism/
+logs/
+
+# Fabric
+.fabric/
+remappedSrc/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.venv/
+
+# Loom
+.loom/
+
+# Distribution packaging
+dist/
+*.zip
+
+# Builds before the runtime textures' junction moved under remix-runtime/
+# linked it here; the build removes a leftover one. Keep the path ignored.
+packaging/textures/
+
+ignore/
+
+# Benchmark output (per-run, not tracked)
+metrics.txt
+sample-report/
+
+# Agent scratch directories
+.claude/
+.codex
+.worktrees/
+
+# Per-developer editor config
+.cursor/mcp.json
+
+# Staged runtime junctions or local copies, outside build/ so clean is safe
+/remix-runtime/
+
+# Runtime-generated files
+*.dxvk-cache
+nrc_session_log.txt
+/rtxremix-java/rtx-remix/
+
+# Loose wrapper compilation outputs and logs
+/rtxremix-java/**/*.class
+/rtxremix-java/**/*.jar
+/rtxremix-java/**/*.log
