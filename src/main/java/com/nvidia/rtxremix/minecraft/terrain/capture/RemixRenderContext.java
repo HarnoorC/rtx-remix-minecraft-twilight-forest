@@ -5,6 +5,7 @@
 package com.nvidia.rtxremix.minecraft.terrain.capture;
 
 import net.fabricmc.fabric.api.renderer.v1.material.RenderMaterial;
+import net.fabricmc.fabric.api.renderer.v1.mesh.Mesh;
 import net.fabricmc.fabric.api.renderer.v1.mesh.MutableQuadView;
 import net.fabricmc.fabric.api.renderer.v1.mesh.QuadEmitter;
 import net.fabricmc.fabric.api.renderer.v1.mesh.QuadView;
@@ -27,6 +28,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Deque;
 import java.util.List;
+import java.util.function.Consumer;
 import java.util.function.Predicate;
 
 /**
@@ -40,6 +42,11 @@ import java.util.function.Predicate;
 final class RemixRenderContext implements RenderContext {
 
     private final CapturingQuadEmitter emitter = new CapturingQuadEmitter();
+    private final Consumer<QuadView> meshQuadConsumer = quad -> emitter.copyFrom(quad).emit();
+    private final Consumer<Mesh> meshConsumer = mesh -> {
+        emitter.clear();
+        mesh.forEach(meshQuadConsumer);
+    };
     private final Deque<QuadTransform> transformStack = new ArrayDeque<>();
     private final List<SectionBlockData.BlockQuad> captured = new ArrayList<>();
 
@@ -69,6 +76,13 @@ final class RemixRenderContext implements RenderContext {
     public QuadEmitter getEmitter() {
         emitter.clear();
         return emitter;
+    }
+
+    /** Mesh.outputTo may require its renderer's own emitter; copy through the public quad API. */
+    @SuppressWarnings("deprecation")
+    @Override
+    public Consumer<Mesh> meshConsumer() {
+        return meshConsumer;
     }
 
     @Override

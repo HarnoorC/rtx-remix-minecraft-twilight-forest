@@ -266,6 +266,11 @@ in injection annotations. Remove the diagnostic flag and export afterwards.
 
 The suite covers JVM-side behavior and data contracts.
 
+`test` also runs `fabricTest`, which checks terrain mesh capture using real
+Indigo meshes under Fabric Loader's class transformations. Run it alone with
+`gradlew.bat fabricTest`. It initializes Minecraft registries without opening
+a game window; the remaining JVM tests run separately without transformations.
+
 It does not cross the JNI boundary and it does not render, so it cannot tell you
 that a change looks right. Two things follow. First, `test` still needs the C++
 toolchain, because every task that reaches `classes` builds the bridge and
