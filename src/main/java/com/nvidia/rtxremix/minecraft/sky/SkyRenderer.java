@@ -40,6 +40,7 @@ import net.minecraft.client.world.ClientWorld;
 import net.minecraft.util.Identifier;
 import net.minecraft.util.math.Vec3d;
 import org.joml.Quaternionf;
+import org.joml.Matrix3f;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -157,6 +158,8 @@ public class SkyRenderer {
     private final Transform sunTransform = new Transform();
     private final Transform moonTransform = new Transform();
     private final Transform starTransform = new Transform();
+    private final Quaternionf starRotation = new Quaternionf();
+    private final Matrix3f starRotationMatrix = new Matrix3f();
     private final float[] celestialMoonDirection = new float[3];
     private boolean celestialInitializationFailed;
     private float lastWeatherOpacity = -1f;
@@ -214,6 +217,8 @@ public class SkyRenderer {
         SkyProfile profile = SkyProfile.forWorld(world);
         if (world != currentWorld || profile != currentSkyProfile) {
             releaseSkyLights();
+            destroyCelestialAssets();
+            celestialInitializationFailed = false;
             currentWorld = world;
             currentSkyProfile = profile;
         }
@@ -224,6 +229,9 @@ public class SkyRenderer {
             renderAtmosphericSky(api, world, cameraPos, tickDelta);
         } else {
             renderFixedSky(api, fixedRadiance, profile.ambientMultiplier(twilightAmbientStrength));
+            if (profile == SkyProfile.TWILIGHT_FOREST && ensureCelestialAssets()) {
+                renderStars(api, cameraPos, world.getSkyAngle(tickDelta), 1.0f, 0.0f);
+            }
         }
     }
 
@@ -573,11 +581,7 @@ public class SkyRenderer {
         float weatherVisibility = Math.max(
                 minimumCelestialWeatherVisibility, 1.0f - clamp01(weatherOpacity));
         float starsOpacity = starOpacity(world.getStarBrightness(tickDelta)) * weatherVisibility;
-        if (starsOpacity > 0.0f) {
-            updateStarOpacity(starsOpacity);
-            updateStarTransform(starTransform, cameraPos, skyAngle);
-            drawCelestialMesh(api, starMeshAsset, starTransform);
-        }
+        renderStars(api, cameraPos, skyAngle, starsOpacity, SUN_PATH_ROTATION_DEG);
 
         celestialMoonDirection[0] = -sunDirection[0];
         celestialMoonDirection[1] = -sunDirection[1];
@@ -600,6 +604,14 @@ public class SkyRenderer {
                     MOON_HALF_SIZE);
             drawCelestialMesh(api, moonMeshAssets[moonPhase], moonTransform);
         }
+    }
+
+    private void renderStars(
+            RemixAPI api, Vec3d cameraPos, float skyAngle, float opacity, float pathRotation) {
+        if (opacity <= 0.0f) return;
+        updateStarOpacity(opacity);
+        updateStarTransform(starTransform, cameraPos, skyAngle, pathRotation);
+        drawCelestialMesh(api, starMeshAsset, starTransform);
     }
 
     private boolean ensureCelestialAssets() {
@@ -636,7 +648,9 @@ public class SkyRenderer {
                         maxV);
             }
 
-            starMeshAsset = createStarMesh(starMaterialAsset, getVanillaStarVertices());
+            starMeshAsset = createStarMesh(starMaterialAsset,
+                    currentSkyProfile == SkyProfile.TWILIGHT_FOREST
+                            ? TwilightStarField.create() : getVanillaStarVertices());
             celestialBlendPNext = CELESTIAL_BLEND.allocNative(0);
             lastSunOpacity = 1.0f;
             lastMoonOpacity = 1.0f;
@@ -873,21 +887,26 @@ public class SkyRenderer {
         transform.matrix[11] = (float) cameraPos.z + dz * CELESTIAL_DISTANCE;
     }
 
-    private static void updateStarTransform(
+    private void updateStarTransform(
             Transform transform,
             Vec3d cameraPos,
-            float skyAngle) {
-        Quaternionf rotation = new Quaternionf()
-                .rotateX((float) Math.toRadians(SUN_PATH_ROTATION_DEG))
+            float skyAngle,
+            float pathRotation) {
+        starRotation.identity()
+                .rotateX((float) Math.toRadians(pathRotation))
                 .rotateY(-(float) Math.PI / 2.0f)
                 .rotateX(skyAngle * (float) (Math.PI * 2.0));
-        Transform rotated = Transform.fromTRS(
-                (float) cameraPos.x,
-                (float) cameraPos.y,
-                (float) cameraPos.z,
-                rotation,
-                STAR_DISTANCE_SCALE);
-        System.arraycopy(rotated.matrix, 0, transform.matrix, 0, transform.matrix.length);
+        starRotationMatrix.rotation(starRotation).scale(STAR_DISTANCE_SCALE);
+        transform.matrix[0] = starRotationMatrix.m00();
+        transform.matrix[1] = starRotationMatrix.m10();
+        transform.matrix[2] = starRotationMatrix.m20();
+        transform.matrix[4] = starRotationMatrix.m01();
+        transform.matrix[5] = starRotationMatrix.m11();
+        transform.matrix[6] = starRotationMatrix.m21();
+        transform.matrix[8] = starRotationMatrix.m02();
+        transform.matrix[9] = starRotationMatrix.m12();
+        transform.matrix[10] = starRotationMatrix.m22();
+        transform.setTranslation((float) cameraPos.x, (float) cameraPos.y, (float) cameraPos.z);
     }
 
     private static float inverseLength(float x, float y, float z) {

@@ -16,7 +16,7 @@ public enum SkyProfile {
     // Publish a black dome so escaped rays do not use Remix's undrawn sky matte.
     SKYLESS(new float[]{0.0f, 0.0f, 0.0f}),
     // Authored blue twilight radiance, independent of time and vanilla's lightmap ambient.
-    TWILIGHT_FOREST(new float[]{0.04f, 0.055f, 0.09f});
+    TWILIGHT_FOREST(new float[]{0.008f, 0.014f, 0.04f});
 
     private static final Identifier TWILIGHT_FOREST_EFFECTS =
             Identifier.of("twilightforest", "renderer");
