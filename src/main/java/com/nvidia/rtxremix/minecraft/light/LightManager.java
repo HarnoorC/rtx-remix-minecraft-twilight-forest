@@ -21,13 +21,13 @@ import com.nvidia.rtxremix.minecraft.block.CopperBeaconPose;
 import com.nvidia.rtxremix.minecraft.block.SpotLightBlock;
 import com.nvidia.rtxremix.minecraft.entity.CopperBeaconAnimationClock;
 import com.nvidia.rtxremix.minecraft.entity.RemixFirstPersonPass;
+import com.nvidia.rtxremix.minecraft.sky.SkyProfile;
 import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
 import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
 import net.minecraft.block.Block;
 import net.minecraft.block.BlockState;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.render.Camera;
-import net.minecraft.client.render.DimensionEffects;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.entity.Entity;
 import net.minecraft.entity.EquipmentSlot;
@@ -1034,9 +1034,8 @@ public class LightManager {
     // ================================================================
 
     private void updateSkyLight(ClientWorld world) {
-        // Only a NORMAL sky has a sun and a moon. The End and the Nether pin their time, so
-        // evaluating them would light a permanent noon or midnight that vanilla never draws.
-        skyLightState = world.getDimensionEffects().getSkyType() == DimensionEffects.SkyType.NORMAL
+        // Fixed skies have no celestial lights, even when their dimension pins the time.
+        skyLightState = SkyProfile.forWorld(world).hasCelestialLighting()
                 ? evaluateSkyLightState(
                         world.getSkyAngle(0f),
                         world.getRainGradient(0.0f),

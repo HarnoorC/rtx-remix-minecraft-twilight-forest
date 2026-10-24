@@ -35,7 +35,6 @@ import com.nvidia.rtxremix.minecraft.logic.ConfLayerDriver;
 import com.nvidia.rtxremix.minecraft.profiling.ProfileScope;
 import com.nvidia.rtxremix.minecraft.util.DirectBufferPool;
 import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.render.DimensionEffects;
 import net.minecraft.client.texture.NativeImage;
 import net.minecraft.client.world.ClientWorld;
 import net.minecraft.util.Identifier;
@@ -56,8 +55,8 @@ import java.util.List;
  * <p>Uses a physically-based dome light generated from Rayleigh+Mie atmospheric
  * scattering, driven by Minecraft's time-of-day. Weather blends a static HDR
  * overcast dome over the atmospheric sky. Dimensions without a NORMAL sky publish a
- * constant dome instead: dark violet for the End, and black with no sky ambient for a
- * skyless (SkyType.NONE) dimension such as the Nether.
+ * constant dome instead: blue twilight for Twilight Forest, dark violet for the End,
+ * and black with no sky ambient for a skyless dimension such as the Nether.
  */
 public class SkyRenderer {
 
@@ -94,21 +93,8 @@ public class SkyRenderer {
     private static final float SKY_AMBIENT_RECT_Y = 325.0f;
     /** Sky ambient rect light: half-size in blocks, so it covers 8000 blocks from origin. */
     private static final float SKY_AMBIENT_RECT_HALF_SIZE = 8000.0f;
-    /**
-     * Constant sky for the End, in the atmospheric dome's radiance units: vanilla end_sky.png's
-     * mean chroma under its 0xFF282828 vertex tint, at the luminance of that tint (40/255) times
-     * the End's 0.15 fog factor. It feeds both the dome and the ambient rect.
-     */
-    static final float[] END_SKY_RADIANCE = {0.0275f, 0.0210f, 0.0372f};
-    /**
-     * Constant sky for a skyless dimension (SkyType.NONE): a black dome and, since the ambient
-     * rect carries the same constant, no sky ambient. Nothing above a roofed world reaches its
-     * interior, so a rect above the build limit would light only the roof top; interior light
-     * comes from emissives and the fog medium. The black dome is still published: without an
-     * active dome light Remix composites escaped rays from its own sky matte, which nothing
-     * draws here.
-     */
-    static final float[] SKYLESS_SKY_RADIANCE = {0.0f, 0.0f, 0.0f};
+    public static final float DEFAULT_TWILIGHT_AMBIENT_STRENGTH = 1.0f;
+    public static final float MAX_TWILIGHT_AMBIENT_STRENGTH = 10.0f;
     public static final float DEFAULT_NIGHT_AMBIENT_BOOST = 2.5f;
     public static final float DEFAULT_DAY_AMBIENT_BOOST = 0.0f;
     public static final boolean DEFAULT_SKY_AMBIENT_RECT_ENABLED = true;
@@ -117,6 +103,7 @@ public class SkyRenderer {
     public static final float MAX_MIE_SCATTERING_ANISOTROPY = 0.99f;
     private static float nightAmbientBoost = DEFAULT_NIGHT_AMBIENT_BOOST;
     private static float dayAmbientBoost = DEFAULT_DAY_AMBIENT_BOOST;
+    private static float twilightAmbientStrength = DEFAULT_TWILIGHT_AMBIENT_STRENGTH;
     private static float minimumCelestialWeatherVisibility = DEFAULT_MINIMUM_CELESTIAL_WEATHER_VISIBILITY;
     private static float mieScatteringAnisotropy = DEFAULT_MIE_SCATTERING_ANISOTROPY;
 
@@ -124,6 +111,10 @@ public class SkyRenderer {
     public static void setNightAmbientBoost(float v)  { nightAmbientBoost = v; }
     public static float getDayAmbientBoost()          { return dayAmbientBoost; }
     public static void setDayAmbientBoost(float v)    { dayAmbientBoost = v; }
+    public static float getTwilightAmbientStrength() { return twilightAmbientStrength; }
+    public static void setTwilightAmbientStrength(float v) {
+        twilightAmbientStrength = Math.clamp(v, 0.0f, MAX_TWILIGHT_AMBIENT_STRENGTH);
+    }
     public static float getMinimumCelestialWeatherVisibility()  { return minimumCelestialWeatherVisibility; }
     public static void setMinimumCelestialWeatherVisibility(float v) {
         minimumCelestialWeatherVisibility = Math.clamp(v, 0.0f, 1.0f);
@@ -143,6 +134,7 @@ public class SkyRenderer {
 
     private final RemixRenderer renderer;
     private ClientWorld currentWorld;
+    private SkyProfile currentSkyProfile;
     private RemixTexture skyTextureAsset;
     private RemixLight skyDomeLightAsset;
     private long overcastTextureHandle;
@@ -219,31 +211,20 @@ public class SkyRenderer {
 
         // A portal replaces the world without a disconnect, and each sky type publishes a
         // different set of lights, so nothing published for the previous world may carry over.
-        if (world != currentWorld) {
+        SkyProfile profile = SkyProfile.forWorld(world);
+        if (world != currentWorld || profile != currentSkyProfile) {
             releaseSkyLights();
             currentWorld = world;
+            currentSkyProfile = profile;
         }
 
         RemixAPI api = renderer.getRemixApi();
-        float[] fixedRadiance = fixedSkyRadiance(world.getDimensionEffects().getSkyType());
+        float[] fixedRadiance = profile.fixedRadiance();
         if (fixedRadiance == null) {
             renderAtmosphericSky(api, world, cameraPos, tickDelta);
         } else {
-            renderFixedSky(api, fixedRadiance);
+            renderFixedSky(api, fixedRadiance, profile.ambientMultiplier(twilightAmbientStrength));
         }
-    }
-
-    /**
-     * Maps a sky type to the constant radiance its dome and ambient rect publish.
-     *
-     * @return the constant, or null for a NORMAL sky, whose dome is the time-driven atmosphere
-     */
-    static float[] fixedSkyRadiance(DimensionEffects.SkyType skyType) {
-        return switch (skyType) {
-            case NORMAL -> null;
-            case END -> END_SKY_RADIANCE;
-            case NONE -> SKYLESS_SKY_RADIANCE;
-        };
     }
 
     private void renderAtmosphericSky(
@@ -310,10 +291,11 @@ public class SkyRenderer {
 
     /**
      * Publishes a dome of one constant radiance through the atmospheric dome's texture and
-     * light, and an ambient rect of the same radiance, so a black sky publishes no ambient. The
-     * texture is filled once per world and never dispatches the atmosphere compute.
+     * light, and an ambient rect scaled independently for Twilight Forest. A black sky
+     * publishes no ambient. The texture is filled once per profile or world change and
+     * never dispatches the atmosphere compute.
      */
-    private void renderFixedSky(RemixAPI api, float[] radiance) {
+    private void renderFixedSky(RemixAPI api, float[] radiance, float ambientMultiplier) {
         if (skyTextureAsset == null || !skyTextureAsset.isAlive()) {
             destroyAsset(skyTextureAsset);
             ByteBuffer pixels = DirectBufferPool.acquire(AtmosphericSkyGenerator.OUTPUT_BYTES);
@@ -321,7 +303,10 @@ public class SkyRenderer {
             skyTextureAsset = createSkyTexture(pixels);
         }
         publishSkyDome(api);
-        publishSkyAmbient(api, radiance[0], radiance[1], radiance[2]);
+        publishSkyAmbient(api,
+                radiance[0] * ambientMultiplier,
+                radiance[1] * ambientMultiplier,
+                radiance[2] * ambientMultiplier);
     }
 
     /**
@@ -1015,6 +1000,7 @@ public class SkyRenderer {
         destroyCelestialAssets();
         releaseSkyLights();
         currentWorld = null;
+        currentSkyProfile = null;
 
         RemixAPI api = renderer.getRemixApi();
         if (overcastTextureHandle != 0 && api != null) {

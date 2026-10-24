@@ -5,6 +5,7 @@
 package com.nvidia.rtxremix.minecraft.sky;
 
 import net.minecraft.client.render.DimensionEffects;
+import net.minecraft.util.Identifier;
 import org.junit.jupiter.api.Test;
 
 import java.nio.ByteBuffer;
@@ -12,6 +13,7 @@ import java.nio.ByteOrder;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -63,7 +65,7 @@ class SkyRendererDimensionSkyTest {
 
     @Test
     void endSkyHasVanillaTintLuminanceAndVanillaVioletChroma() {
-        float[] dome = SkyRenderer.END_SKY_RADIANCE;
+        float[] dome = SkyProfile.END.fixedRadiance();
 
         assertEquals(END_SKY_LUMINANCE, luminance(dome), 1.0e-4f);
         assertTrue(dome[0] > dome[1], "end_sky.png is redder than it is green");
@@ -72,21 +74,56 @@ class SkyRendererDimensionSkyTest {
 
     @Test
     void normalSkyHasNoFixedRadiance() {
-        assertNull(SkyRenderer.fixedSkyRadiance(DimensionEffects.SkyType.NORMAL));
+        SkyProfile profile = SkyProfile.resolve(
+                Identifier.ofVanilla("overworld"), DimensionEffects.SkyType.NORMAL);
+        assertNull(profile.fixedRadiance());
+        assertTrue(profile.hasCelestialLighting());
     }
 
     @Test
     void endSkyPublishesItsConstantForDomeAndAmbient() {
-        assertSame(
-                SkyRenderer.END_SKY_RADIANCE,
-                SkyRenderer.fixedSkyRadiance(DimensionEffects.SkyType.END));
+        SkyProfile profile = SkyProfile.resolve(
+                Identifier.ofVanilla("the_end"), DimensionEffects.SkyType.END);
+        assertArrayEquals(new float[]{0.0275f, 0.0210f, 0.0372f}, profile.fixedRadiance());
+        assertFalse(profile.hasCelestialLighting());
     }
 
     @Test
     void skylessSkyIsBlackSoNoAmbientIsPublished() {
         assertArrayEquals(
                 new float[]{0.0f, 0.0f, 0.0f},
-                SkyRenderer.fixedSkyRadiance(DimensionEffects.SkyType.NONE));
+                SkyProfile.resolve(Identifier.ofVanilla("the_nether"),
+                        DimensionEffects.SkyType.NONE).fixedRadiance());
+        assertFalse(SkyProfile.SKYLESS.hasCelestialLighting());
+    }
+
+    @Test
+    void twilightCustomSkyHasNonzeroRadianceWithoutCelestialLighting() {
+        SkyProfile profile = SkyProfile.resolve(
+                Identifier.of("twilightforest", "renderer"), DimensionEffects.SkyType.NONE);
+
+        assertSame(SkyProfile.TWILIGHT_FOREST, profile);
+        assertTrue(luminance(profile.fixedRadiance()) > 0.0f);
+        assertFalse(profile.hasCelestialLighting());
+        assertEquals(0.0f, profile.ambientMultiplier(0.0f));
+        assertEquals(1.0f, profile.ambientMultiplier(1.0f));
+        assertEquals(10.0f, profile.ambientMultiplier(10.0f));
+    }
+
+    @Test
+    void unknownEffectsKeepTheirSkyTypeAndIgnoreTwilightStrength() {
+        Identifier otherEffects = Identifier.of("othermod", "renderer");
+        assertSame(SkyProfile.ATMOSPHERIC,
+                SkyProfile.resolve(otherEffects, DimensionEffects.SkyType.NORMAL));
+        assertSame(SkyProfile.END,
+                SkyProfile.resolve(otherEffects, DimensionEffects.SkyType.END));
+        assertSame(SkyProfile.SKYLESS,
+                SkyProfile.resolve(otherEffects, DimensionEffects.SkyType.NONE));
+        for (SkyProfile profile : new SkyProfile[]{
+                SkyProfile.ATMOSPHERIC, SkyProfile.END, SkyProfile.SKYLESS}) {
+            assertEquals(1.0f, profile.ambientMultiplier(0.0f));
+            assertEquals(1.0f, profile.ambientMultiplier(10.0f));
+        }
     }
 
     private static float luminance(float[] radiance) {

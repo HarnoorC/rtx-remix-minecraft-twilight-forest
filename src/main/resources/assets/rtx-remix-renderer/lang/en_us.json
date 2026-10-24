@@ -104,6 +104,8 @@
   "rtxremix.setting.sky.dayAmbient.tip": "Controls the strength of soft light from the daytime sky.",
   "rtxremix.setting.sky.nightAmbient": "Night Ambient Boost",
   "rtxremix.setting.sky.nightAmbient.tip": "Controls the strength of soft light from the night sky.",
+  "rtxremix.setting.sky.twilightAmbient": "Twilight Ambient",
+  "rtxremix.setting.sky.twilightAmbient.tip": "Scales the ambient area light in Twilight Forest only. 1.00 is the default; 0 disables this light while keeping the twilight dome. Requires Sky Ambient Light.",
 
   "rtxremix.setting.blockLights.candles": "Candles",
   "rtxremix.setting.blockLights.candleCakes": "Candle Cakes",

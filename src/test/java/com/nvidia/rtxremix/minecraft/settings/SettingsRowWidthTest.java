@@ -91,6 +91,7 @@ class SettingsRowWidthTest {
             entry("rtxremix.setting.sky.moonIntensity", "10.00"),
             entry("rtxremix.setting.sky.dayAmbient", "5.00"),
             entry("rtxremix.setting.sky.nightAmbient", "10.00"),
+            entry("rtxremix.setting.sky.twilightAmbient", "10.00"),
             entry("rtxremix.setting.materials.terrainEmission", "50.00×"),
             entry("rtxremix.setting.materials.smoothReliefMaps", "OFF"),
             entry("rtxremix.setting.post.exposure", "2.00"),

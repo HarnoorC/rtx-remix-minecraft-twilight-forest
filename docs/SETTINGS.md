@@ -37,6 +37,13 @@ This page shapes the sky's light and appearance, clouds, and block lights.
 Clouds still follow Minecraft's own cloud option: Off removes them regardless
 of the selected style, while Fast and Fancy draw the same geometry here.
 
+Twilight Forest uses a constant blue twilight dome without sun or moon lights.
+**Twilight Ambient** scales its overhead ambient area light from 0 to 10,
+with 1 as the default. It requires **Sky Ambient Light** to be enabled.
+A value of 0 removes the area light while the dome still provides sky radiance.
+The control applies immediately, is saved with the other settings, and affects
+only dimensions using Twilight Forest's `twilightforest:renderer` effects.
+
 **Block Lights** opens a table of multipliers for normal light brightness,
 grouping related block lights into a row; the far left is Off. The Copper
 Beacon is separate: right-click a placed beacon for its own controls. Lanterns

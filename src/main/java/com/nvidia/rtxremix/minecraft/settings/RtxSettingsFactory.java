@@ -181,6 +181,9 @@ public final class RtxSettingsFactory {
         list.add(skyFloat(renderer, "sky.nightAmbient", "rtxremix.setting.sky.nightAmbient",
                 0.0, 10.0,
                 SkyRenderer::getNightAmbientBoost, SkyRenderer::setNightAmbientBoost));
+        list.add(skyFloat(renderer, "sky.twilightAmbient", "rtxremix.setting.sky.twilightAmbient",
+                0.0, SkyRenderer.MAX_TWILIGHT_AMBIENT_STRENGTH,
+                SkyRenderer::getTwilightAmbientStrength, SkyRenderer::setTwilightAmbientStrength));
 
         for (BlockLightIntensityControls.Control control
                 : BlockLightIntensityControls.controls()) {
