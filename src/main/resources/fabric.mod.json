@@ -30,8 +30,8 @@
     ],
     "accessWidener": "rtx-remix-renderer.accesswidener",
     "depends": {
-        "fabricloader": ">=0.16.5",
-        "fabric-api": ">=0.116.10+1.21.1",
+        "fabricloader": ">=0.17.0",
+        "fabric-api": ">=0.116.17+1.21.1",
         "minecraft": "1.21.1",
         "java": ">=21"
     }

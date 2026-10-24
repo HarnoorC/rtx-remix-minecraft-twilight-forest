@@ -140,8 +140,8 @@ $script:PRISM_INSTANCE_LEGACY_NAMES = @(
 )
 $script:PRISM_PORTABLE_DIR   = Join-Path $env:LOCALAPPDATA 'RtxRemixMinecraft\PrismLauncher'
 $script:MANAGED_JDK_DIR      = Join-Path $env:LOCALAPPDATA 'RtxRemixMinecraft\jdk-21'
-$script:FABRIC_API_VERSION   = '0.116.10+1.21.1'
-$script:FABRIC_LOADER_VER    = '0.16.5'
+$script:FABRIC_API_VERSION   = '0.116.17+1.21.1'
+$script:FABRIC_LOADER_VER    = '0.17.0'
 $script:MC_VERSION           = '1.21.1'
 $script:FABRIC_INSTALLER_VER = '1.0.1'
 # Fabric installer 1.0.x writes launcher_profiles.json using an MC-only

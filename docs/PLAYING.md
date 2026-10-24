@@ -84,7 +84,7 @@ Microsoft account.
 
 If you already run a Fabric instance for Minecraft 1.21.1 in a launcher of
 your choice, you can install the mod by hand. The instance needs Java 21,
-Fabric Loader 0.16.5 or newer, and Fabric API 0.116.10+1.21.1 or newer.
+Fabric Loader 0.17.0 or newer, and Fabric API 0.116.17+1.21.1 or newer.
 
 1. Copy the JAR from the archive's `mods\` folder into the instance's `mods\`
    folder. It carries the runtime and its textures and unpacks them into the
