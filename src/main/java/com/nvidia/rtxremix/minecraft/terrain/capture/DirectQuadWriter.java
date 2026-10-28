@@ -210,6 +210,8 @@ public final class DirectQuadWriter {
     private final int[] stageCategory = new int[MAX_BLOCK_QUADS];
     private final boolean[] stageDiscarded = new boolean[MAX_BLOCK_QUADS];
     private final int[] stageEmissionPower = new int[MAX_BLOCK_QUADS];
+    private final boolean[] stageSubsurface = new boolean[MAX_BLOCK_QUADS];
+    private final int[] stageDustGroup = new int[MAX_BLOCK_QUADS];
 
     // --- public API ---
 
@@ -324,6 +326,7 @@ public final class DirectQuadWriter {
 
         int solidType = BlockTextureManager.layerType("solid");
         classifyStagedQuads(solidType);
+        groupDustCutoutLayers(tex);
         discardDuplicateCutoutBackfaces();
 
         for (int i = 0; i < stageCount; i++) {
@@ -332,14 +335,13 @@ public final class DirectQuadWriter {
             String layer = stageLayer[i];
             int layerType = BlockTextureManager.layerType(layer);
 
-            BlockTextureManager.SpriteEntry se = stageSpriteEntry[i];
             int cat = stageCategory[i];
 
             String bk = layer;
             if (cat == ChunkManager.CAT_SOLID && layerType != solidType) {
                 bk = "solid";
             }
-            if (se != null && se.hasSSS && tex != null && tex.getAtlasMaterialSSS(layerType) != null) {
+            if (stageSubsurface[i]) {
                 bk = sssBucketKeyForOriginalLayer(layer, bk);
             }
             final String bucketKey = RedstoneEmission.bucketKey(bk, stageEmissionPower[i]);
@@ -359,6 +361,63 @@ public final class DirectQuadWriter {
         Arrays.fill(stageSpriteEntry, 0, stageCount, null);
         Arrays.fill(stageDiscarded, 0, stageCount, false);
         stageCount = 0;
+    }
+
+    private void groupDustCutoutLayers(BlockTextureManager tex) {
+        int dustQuads = 0;
+        for (int i = 0; i < stageCount; i++) {
+            stageDustGroup[i] = i;
+            if (isDustCutout(i)) dustQuads++;
+            BlockTextureManager.SpriteEntry sprite = stageSpriteEntry[i];
+            stageSubsurface[i] = sprite != null && sprite.hasSSS && tex != null
+                    && tex.getAtlasMaterialSSS(BlockTextureManager.layerType(stageLayer[i])) != null;
+        }
+        if (dustQuads < 2) return;
+        for (int i = 0; i < stageCount; i++) {
+            if (!isDustCutout(i)) continue;
+            for (int j = 0; j < i; j++) {
+                if (!isDustCutoutPair(i, j) || !isCoplanarOverlapping(i, j, true)) continue;
+                int a = dustGroup(i), b = dustGroup(j);
+                stageDustGroup[Math.max(a, b)] = Math.min(a, b);
+            }
+        }
+        // A stack shares alpha classification and the atlas SSS profile, but keeps
+        // each sprite's UVs, tint and paint order. Zero-thickness texels stay non-SSS.
+        for (int i = 0; i < stageCount; i++) {
+            int group = dustGroup(i);
+            stageCategory[group] = sharedDustCategory(stageCategory[group], stageCategory[i]);
+            stageSubsurface[group] |= stageSubsurface[i];
+        }
+        for (int i = 0; i < stageCount; i++) {
+            int group = dustGroup(i);
+            stageCategory[i] = stageCategory[group];
+            stageSubsurface[i] = stageSubsurface[group];
+        }
+    }
+
+    private static int sharedDustCategory(int a, int b) {
+        if (a == ChunkManager.CAT_OVERLAY || b == ChunkManager.CAT_OVERLAY) return ChunkManager.CAT_OVERLAY;
+        if (a == ChunkManager.CAT_CUTOUT || b == ChunkManager.CAT_CUTOUT) return ChunkManager.CAT_CUTOUT;
+        return a;
+    }
+
+    private boolean isDustCutout(int quad) {
+        return stageEmissionPower[quad] >= 0
+                && ("cutout".equals(stageLayer[quad]) || "cutout_mipped".equals(stageLayer[quad]));
+    }
+
+    private boolean isDustCutoutPair(int a, int b) {
+        return isDustCutout(a) && isDustCutout(b)
+                && stageEmissionPower[a] == stageEmissionPower[b]
+                && Objects.equals(stageLayer[a], stageLayer[b]);
+    }
+
+    private int dustGroup(int quad) {
+        while (stageDustGroup[quad] != quad) {
+            stageDustGroup[quad] = stageDustGroup[stageDustGroup[quad]];
+            quad = stageDustGroup[quad];
+        }
+        return quad;
     }
 
     private void classifyStagedQuads(int solidType) {
@@ -535,7 +594,8 @@ public final class DirectQuadWriter {
 
             for (int j = 0; j < stageCount; j++) {
                 if (i == j || stageNeedsAlphaBlend[j]) continue;
-                if (isCoplanarOverlappingDecal(i, j)) {
+                if (isDustCutoutPair(i, j)) continue;
+                if (isCoplanarOverlapping(i, j, false)) {
                     stageOverlay[i] = true;
                     break;
                 }
@@ -560,10 +620,11 @@ public final class DirectQuadWriter {
         return se.hasTransparency(minU, minV, maxU, maxV);
     }
 
-    private boolean isCoplanarOverlappingDecal(int overlayIdx, int baseIdx) {
+    private boolean isCoplanarOverlapping(int overlayIdx, int baseIdx, boolean allowBackfaces) {
         float onx = stageNx[overlayIdx], ony = stageNy[overlayIdx], onz = stageNz[overlayIdx];
         float bnx = stageNx[baseIdx], bny = stageNy[baseIdx], bnz = stageNz[baseIdx];
         float dot = onx * bnx + ony * bny + onz * bnz;
+        if (allowBackfaces) dot = Math.abs(dot);
         if (dot < DECAL_NORMAL_DOT_EPSILON) {
             return false;
         }

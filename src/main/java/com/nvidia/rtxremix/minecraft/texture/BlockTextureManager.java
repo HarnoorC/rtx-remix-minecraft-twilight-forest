@@ -462,6 +462,7 @@ public class BlockTextureManager {
                     se.hasSSS = true;
                     hasAnySSS = true;
                 }
+                clearUnauthoredDustSss(sssThicknessAtlas, atlasW, se);
                 boolean needsEmissive = sI != null && LabPBRConverter.hasEmissiveData(sI);
                 if (needsEmissive) {
                     LabPBRConverter.blitEmissive(emissiveAtlas, atlasW, albedoRGBA, sI,
@@ -542,6 +543,18 @@ public class BlockTextureManager {
         }
         LOGGER.info("Atlas materials created (normal={} height={} emissive={} sss={}, sssSprites={}{})",
                 hasAnyNormal, hasAnyHeight, hasAnyEmissive, hasAnySSS, sssCount, sssSprites);
+    }
+
+    /** Non-SSS dust texels must remain opaque when a coplanar layer selects the thin SSS atlas. */
+    static void clearUnauthoredDustSss(byte[] thicknessAtlas, int atlasWidth, SpriteEntry sprite) {
+        if (sprite.hasSSS || !BuiltinEmission.isRedstoneDustSurface(sprite.id)) return;
+        for (int y = 0; y < sprite.pixH; y++) {
+            int row = ((sprite.pixY + y) * atlasWidth + sprite.pixX) * 4;
+            for (int x = 0; x < sprite.pixW; x++) {
+                int pixel = row + x * 4;
+                thicknessAtlas[pixel] = thicknessAtlas[pixel + 1] = thicknessAtlas[pixel + 2] = 0;
+            }
+        }
     }
 
     private RemixMaterial createAtlasOpaqueMaterial(int lt, RemixTexture normalTex,
