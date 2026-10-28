@@ -21,6 +21,23 @@ import java.util.Map;
  * {@code _s} with emission always wins over it, so a pack can replace these at any time.
  */
 public final class BuiltinEmission {
+    private static final Identifier REDSTONE_DOT = Identifier.ofVanilla("block/redstone_dust_dot");
+    private static final Identifier REDSTONE_LINE0 = Identifier.ofVanilla("block/redstone_dust_line0");
+    private static final Identifier REDSTONE_LINE1 = Identifier.ofVanilla("block/redstone_dust_line1");
+    private static final Identifier REDSTONE_OVERLAY = Identifier.ofVanilla("block/redstone_dust_overlay");
+    private static final Mask REDSTONE_DUST = (u, v) -> 1.0f;
+
+    /** Dust shares these sprites at every power level; its vertex tint supplies the colour. */
+    public static boolean isRedstoneDust(Identifier spriteId) {
+        return REDSTONE_DOT.equals(spriteId) || REDSTONE_LINE0.equals(spriteId)
+                || REDSTONE_LINE1.equals(spriteId);
+    }
+
+    /** Coplanar dust layers must share a bucket even though the overlay has no fallback glow. */
+    public static boolean isRedstoneDustSurface(Identifier spriteId) {
+        return isRedstoneDust(spriteId) || REDSTONE_OVERLAY.equals(spriteId);
+    }
+
     /**
      * Lanterns: the pack's glow (peak factor 0.39, mean 0.03) is authored to read beside
      * an analytic light. On its own, 2.5x brings the brightest texels to 0.97 without
@@ -64,7 +81,10 @@ public final class BuiltinEmission {
     };
 
     private static final Map<Identifier, Mask> MASK = Map.of(
-            Identifier.ofVanilla("block/sea_pickle"), SEA_PICKLE);
+            Identifier.ofVanilla("block/sea_pickle"), SEA_PICKLE,
+            REDSTONE_DOT, REDSTONE_DUST,
+            REDSTONE_LINE0, REDSTONE_DUST,
+            REDSTONE_LINE1, REDSTONE_DUST);
 
     private BuiltinEmission() {
     }

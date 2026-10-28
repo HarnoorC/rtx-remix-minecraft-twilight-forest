@@ -95,6 +95,8 @@ public class BlockTextureManager {
     private final Map<Long, RemixMaterial> materials = new HashMap<>();
     private final RemixMaterial[] atlasMaterials = new RemixMaterial[LAYER_COUNT];
     private final RemixMaterial[] atlasMaterialsSSS = new RemixMaterial[LAYER_COUNT];
+    private final RemixMaterial[][] redstoneAtlasMaterials = new RemixMaterial[RedstoneEmission.MAX_POWER][LAYER_COUNT];
+    private final RemixMaterial[][] redstoneAtlasMaterialsSSS = new RemixMaterial[RedstoneEmission.MAX_POWER][LAYER_COUNT];
     private final List<RemixTexture> managedTextures = new ArrayList<>();
     private final List<RemixMaterial> managedMaterials = new ArrayList<>();
     private RemixMaterial waterSurfaceMaterial;
@@ -514,6 +516,14 @@ public class BlockTextureManager {
                         roughnessTex, metallicTex, emissiveTex,
                         sssTex, sssAlbedoTex) : null;
             }
+            for (int power = 0; power < RedstoneEmission.MAX_POWER; power++) {
+                redstoneAtlasMaterials[power][lt] = createMaterialViaStore(
+                        redstoneAtlasMaterialInfo(lt, false, power));
+                if (atlasMaterialsSSS[lt] != null) {
+                    redstoneAtlasMaterialsSSS[power][lt] = createMaterialViaStore(
+                            redstoneAtlasMaterialInfo(lt, true, power));
+                }
+            }
         }
         int sssCount = 0;
         StringBuilder sssSprites = new StringBuilder();
@@ -659,17 +669,23 @@ public class BlockTextureManager {
      * alpha, which draws the frame and streaks opaque and leaves the rest to refract.
      */
     private RemixMaterial createAtlasGlassMaterial(RemixTexture emissiveTex, RemixTexture normalTex) {
+        return createMaterialViaStore(buildAtlasGlassMaterialInfo(
+                emissiveTex, normalTex, terrainEmissionIntensity()));
+    }
+
+    private MaterialInfo buildAtlasGlassMaterialInfo(
+            RemixTexture emissiveTex, RemixTexture normalTex, float emissionIntensity) {
         MaterialInfo.Builder mb = MaterialInfo.builder()
                 .albedoTexture(atlasAlbedo.getHandle()).filterMode(0);
         if (normalTex != null) mb.normalTexture(normalTex.getHandle());
         if (emissiveTex != null) {
             mb.emissiveTexture(emissiveTex.getHandle())
-                    .emissiveIntensity(terrainEmissionIntensity());
+                    .emissiveIntensity(emissionIntensity);
         }
-        return createMaterialViaStore(mb.translucentExt(MaterialInfoTranslucentEXT.builder()
+        return mb.translucentExt(MaterialInfoTranslucentEXT.builder()
                 .refractiveIndex(COMMON_GLASS_IOR).transmittanceColor(0.97f, 0.97f, 0.97f)
                 .transmittanceMeasurementDistance(0.35f)
-                .useDiffuseLayer(true).build()).build());
+                .useDiffuseLayer(true).build()).build();
     }
 
     // ====================================================================
@@ -914,6 +930,11 @@ public class BlockTextureManager {
     }
 
     private void rebuildAtlasSssMaterial(int layerType) {
+        for (int power = 0; power < RedstoneEmission.MAX_POWER; power++) {
+            destroyManagedMaterial(redstoneAtlasMaterialsSSS[power][layerType]);
+            redstoneAtlasMaterialsSSS[power][layerType] = createMaterialViaStore(
+                    redstoneAtlasMaterialInfo(layerType, true, power));
+        }
         destroyManagedMaterial(atlasMaterialsSSS[layerType]);
         atlasMaterialsSSS[layerType] = createAtlasOpaqueMaterial(layerType, atlasNormalTex,
                 atlasHeightTex, atlasRoughnessTex, atlasMetallicTex, atlasEmissive, atlasSssTex,
@@ -950,6 +971,25 @@ public class BlockTextureManager {
     /** Returns the atlas-based SSS material for the given layer type, or null if none. */
     public RemixMaterial getAtlasMaterialSSS(int layerType) {
         return atlasMaterialsSSS[layerType];
+    }
+
+    /**
+     * Returns a power-specific atlas material created during render-thread atlas setup.
+     * Safe to read from capture workers; power must be 0 through 14 (15 uses the ordinary atlas).
+     */
+    public RemixMaterial getRedstoneAtlasMaterial(int layerType, boolean subsurface, int power) {
+        return subsurface ? redstoneAtlasMaterialsSSS[power][layerType] : redstoneAtlasMaterials[power][layerType];
+    }
+
+    private MaterialInfo redstoneAtlasMaterialInfo(int layerType, boolean subsurface, int power) {
+        // No emissive texture at zero: Remix must treat off dust as ordinary cutout geometry.
+        RemixTexture emissive = power == 0 ? null : atlasEmissive;
+        float intensity = scaledEmissionIntensity(terrainEmissionIntensity(), RedstoneEmission.multiplier(power));
+        if (layerType == L_TRANS) return buildAtlasTransMaterialInfo(emissive, atlasNormalTex, intensity);
+        if (layerType == L_GLASS) return buildAtlasGlassMaterialInfo(emissive, atlasNormalTex, intensity);
+        return buildAtlasOpaqueMaterialInfo(layerType, atlasNormalTex, atlasHeightTex,
+                atlasRoughnessTex, atlasMetallicTex, emissive,
+                subsurface ? atlasSssTex : null, subsurface ? atlasSssAlbedoTex : null, intensity);
     }
 
     /** Maps sprite identifiers (e.g. "minecraft:block/glowstone") to max block luminance. */
@@ -1296,6 +1336,8 @@ public class BlockTextureManager {
         materials.clear(); sprites.clear(); spriteById.clear(); spriteLightColors.clear();
         Arrays.fill(atlasMaterials, null);
         Arrays.fill(atlasMaterialsSSS, null);
+        for (RemixMaterial[] levels : redstoneAtlasMaterials) Arrays.fill(levels, null);
+        for (RemixMaterial[] levels : redstoneAtlasMaterialsSSS) Arrays.fill(levels, null);
         atlasNormalTex = null;
         atlasHeightTex = null;
         atlasRoughnessTex = null;

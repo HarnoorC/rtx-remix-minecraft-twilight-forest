@@ -10,6 +10,7 @@ import com.nvidia.rtxremix.minecraft.asset.RemixMaterial;
 import com.nvidia.rtxremix.minecraft.asset.RemixMesh;
 import com.nvidia.rtxremix.minecraft.asset.RemixMeshSurface;
 import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
+import com.nvidia.rtxremix.minecraft.texture.RedstoneEmission;
 import com.nvidia.rtxremix.minecraft.terrain.capture.SectionMeshData;
 import com.nvidia.rtxremix.minecraft.util.DirectBufferPool;
 import com.nvidia.rtxremix.minecraft.profiling.ProfileScope;
@@ -382,12 +383,15 @@ public final class BlockMeshBuilder {
     }
 
     private RemixMaterial resolveMaterial(String bucketKey, BlockTextureManager tex) {
+        RedstoneEmission.Bucket redstone = RedstoneEmission.resolve(bucketKey);
+        if (redstone != null) bucketKey = redstone.baseKey();
         boolean isSss = bucketKey.endsWith("_sss");
         String baseName = isSss ? bucketKey.substring(0, bucketKey.length() - 4) : bucketKey;
 
         if ("water".equals(baseName)) return tex.getWaterSurfaceMaterial();
 
         int layerType = BlockTextureManager.layerType(baseName);
+        if (redstone != null) return tex.getRedstoneAtlasMaterial(layerType, isSss, redstone.power());
         return isSss ? tex.getAtlasMaterialSSS(layerType)
                      : tex.getAtlasMaterial(layerType);
     }

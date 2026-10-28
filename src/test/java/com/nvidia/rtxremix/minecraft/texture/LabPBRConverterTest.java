@@ -5,13 +5,47 @@
 package com.nvidia.rtxremix.minecraft.texture;
 
 import org.junit.jupiter.api.Test;
+import net.minecraft.util.Identifier;
 
 import java.nio.ByteBuffer;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class LabPBRConverterTest {
+
+    @Test
+    void dustFallbackMatchesAtlasAndSuccessiveAnimationFrames() {
+        BuiltinEmission.Mask mask = BuiltinEmission.mask(Identifier.ofVanilla("block/redstone_dust_dot"));
+        for (int brightness : new int[]{64, 128, 255}) {
+            ByteBuffer frame = ByteBuffer.allocate(8);
+            putPixel(frame, 0, brightness, brightness, brightness, 255);
+            putPixel(frame, 1, 0, 0, 0, 0);
+            byte[] atlas = new byte[8];
+            byte[] patch = new byte[8];
+            LabPBRConverter.blitEmissiveMask(atlas, 2, frame.array(), 0, 0, 2, 1, mask);
+            LabPBRConverter.buildEmissiveMaskPatch(patch, 8, frame, 8, 2, 1, mask);
+            assertArrayEquals(atlas, patch);
+            assertEquals(brightness, unsigned(patch[0]));
+            assertEquals(0, unsigned(patch[4]));
+        }
+    }
+
+    @Test
+    void authoredDustEmissionKeepsItsMaskAndInterpolatesWithAnimation() {
+        ByteBuffer frame = ByteBuffer.allocate(8);
+        putPixel(frame, 0, 254, 254, 254, 255);
+        putPixel(frame, 1, 254, 254, 254, 255);
+        byte[] patch = new byte[8];
+        // Two frames: the first lights only pixel zero; the second dims it to half.
+        byte[] authored = bytes(254, 255, 127, 255);
+        LabPBRConverter.buildEmissivePatch(patch, 8, frame, 8, authored, 2, 2,
+                0, 0, 0, 1, 0.5f, 2, 1, 0.0f);
+        assertEquals(190, unsigned(patch[0]));
+        assertEquals(0, unsigned(patch[4]));
+        assertEquals(0, unsigned(patch[7]));
+    }
 
     @Test
     void applyAoToPatchSamplesTheAoTableAtTheUploadSourceOffset() {

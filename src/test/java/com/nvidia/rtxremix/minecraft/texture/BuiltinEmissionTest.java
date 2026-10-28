@@ -8,11 +8,33 @@ import net.minecraft.util.Identifier;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class BuiltinEmissionTest {
+
+    @Test
+    void dustOverlaySharesTheSurfaceButDoesNotGetAFallbackMask() {
+        Identifier overlay = Identifier.ofVanilla("block/redstone_dust_overlay");
+        assertTrue(BuiltinEmission.isRedstoneDustSurface(overlay));
+        assertNull(BuiltinEmission.mask(overlay));
+    }
+
+    @Test
+    void dustFallbackCoversOnlyTheThreeVanillaWireSprites() {
+        for (String name : new String[]{"redstone_dust_dot", "redstone_dust_line0", "redstone_dust_line1"}) {
+            Identifier id = Identifier.ofVanilla("block/" + name);
+            assertTrue(BuiltinEmission.isRedstoneDust(id));
+            assertEquals(1.0f, BuiltinEmission.mask(id).factor(0.0f, 0.0f));
+            assertEquals(1.0f, BuiltinEmission.mask(id).factor(0.99f, 0.99f));
+        }
+        assertFalse(BuiltinEmission.isRedstoneDust(null));
+        assertFalse(BuiltinEmission.isRedstoneDust(Identifier.ofVanilla("item/redstone")));
+        assertFalse(BuiltinEmission.isRedstoneDust(Identifier.of("other", "block/redstone_dust_dot")));
+        assertNull(BuiltinEmission.mask(Identifier.ofVanilla("block/redstone_torch")));
+    }
 
     /** Centre of texel (col, row) of a 16x16 layout, in sprite UV space. */
     private static float texel(int index) {

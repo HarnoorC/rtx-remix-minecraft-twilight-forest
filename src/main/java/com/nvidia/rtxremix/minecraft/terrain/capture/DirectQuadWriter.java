@@ -6,6 +6,7 @@ package com.nvidia.rtxremix.minecraft.terrain.capture;
 
 import com.nvidia.rtxremix.minecraft.util.DirectBufferPool;
 import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
+import com.nvidia.rtxremix.minecraft.texture.RedstoneEmission;
 import com.nvidia.rtxremix.minecraft.terrain.ChunkManager;
 import com.nvidia.rtxremix.minecraft.profiling.ProfileScope;
 import com.nvidia.rtxremix.HardcodedVertex;
@@ -208,6 +209,7 @@ public final class DirectQuadWriter {
             new BlockTextureManager.SpriteEntry[MAX_BLOCK_QUADS];
     private final int[] stageCategory = new int[MAX_BLOCK_QUADS];
     private final boolean[] stageDiscarded = new boolean[MAX_BLOCK_QUADS];
+    private final int[] stageEmissionPower = new int[MAX_BLOCK_QUADS];
 
     // --- public API ---
 
@@ -253,6 +255,16 @@ public final class DirectQuadWriter {
                            int color, Identifier spriteId,
                            float su0, float sv0, float su1, float sv1,
                            String renderLayer) {
+        stageQuad(positions, uvs, nx, ny, nz, color, spriteId,
+                su0, sv0, su1, sv1, renderLayer, -1);
+    }
+
+    /** Stages a quad with dust emission power 0–15, or -1 for an ordinary material. */
+    public void stageQuad(float[] positions, float[] uvs,
+                          float nx, float ny, float nz,
+                          int color, Identifier spriteId,
+                          float su0, float sv0, float su1, float sv1,
+                          String renderLayer, int emissionPower) {
         if (stageCount >= MAX_BLOCK_QUADS) return;
         int i = stageCount++;
         System.arraycopy(positions, 0, stagePos, i * 12, 12);
@@ -265,6 +277,7 @@ public final class DirectQuadWriter {
         stageLayer[i] = renderLayer;
         stageOverlay[i] = false;
         stageDiscarded[i] = false;
+        stageEmissionPower[i] = emissionPower;
     }
 
     /**
@@ -329,7 +342,7 @@ public final class DirectQuadWriter {
             if (se != null && se.hasSSS && tex != null && tex.getAtlasMaterialSSS(layerType) != null) {
                 bk = sssBucketKeyForOriginalLayer(layer, bk);
             }
-            final String bucketKey = bk;
+            final String bucketKey = RedstoneEmission.bucketKey(bk, stageEmissionPower[i]);
 
             BucketBuffer bb = getBucket(cat, bucketKey);
 
@@ -387,6 +400,7 @@ public final class DirectQuadWriter {
         if (normalDot > -DECAL_NORMAL_DOT_EPSILON) return false;
 
         if (stageColor[a] != stageColor[b]
+                || stageEmissionPower[a] != stageEmissionPower[b]
                 || !Objects.equals(stageSpriteId[a], stageSpriteId[b])
                 || !Objects.equals(stageLayer[a], stageLayer[b])
                 || stageSU0[a] != stageSU0[b]

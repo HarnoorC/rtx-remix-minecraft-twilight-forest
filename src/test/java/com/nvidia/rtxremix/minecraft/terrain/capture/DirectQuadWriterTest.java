@@ -7,6 +7,7 @@ package com.nvidia.rtxremix.minecraft.terrain.capture;
 import com.nvidia.rtxremix.HardcodedVertex;
 import com.nvidia.rtxremix.minecraft.terrain.ChunkManager;
 import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
+import com.nvidia.rtxremix.minecraft.texture.RedstoneEmission;
 import net.minecraft.util.Identifier;
 import org.junit.jupiter.api.Test;
 
@@ -18,6 +19,109 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DirectQuadWriterTest {
+
+    @Test
+    void dustLineAndCoplanarOverlayStayTogetherInEveryPowerState() {
+        DirectQuadWriter writer = new DirectQuadWriter();
+        for (int power = 0; power <= 15; power++) {
+            writer.beginSection();
+            for (String texture : new String[] {"redstone_dust_line0", "redstone_dust_overlay"}) {
+                Identifier sprite = Identifier.ofVanilla("block/" + texture);
+                writer.stageQuad(FRONT_POSITIONS, FRONT_UVS, 0, 0, 1,
+                        texture.endsWith("overlay") ? 0xFFFFFFFF : 0xFF660000,
+                        sprite, 0, 0, 1, 1, "cutout",
+                        BlockQuadEmitter.dustEmissionPower(power, sprite));
+            }
+            writer.flushBlock(null);
+            SectionMeshData mesh = writer.buildMeshData();
+            try {
+                assertEquals(1, mesh.surfaces().size(), "Coplanar layers must not become separate surfaces");
+                assertEquals(RedstoneEmission.bucketKey("cutout", power),
+                        mesh.surfaces().get(0).bucketKey());
+                assertEquals(8, mesh.surfaces().get(0).vertexCount());
+                assertEquals(ChunkManager.CAT_CUTOUT, mesh.surfaces().get(0).category());
+            } finally {
+                mesh.release();
+            }
+        }
+    }
+
+    @Test
+    void allPowerTransitionsPreserveVerticesButChangeTheMeshFingerprint() {
+        DirectQuadWriter writer = new DirectQuadWriter();
+        SectionMeshData powered = dustMesh(writer, 15);
+        try {
+            assertEquals("cutout", powered.surfaces().get(0).bucketKey());
+            long previousHash = powered.contentHash();
+            long previousCategoryHash = powered.categoryContentHash(ChunkManager.CAT_CUTOUT);
+            for (int power = 0; power < 15; power++) {
+                SectionMeshData mesh = dustMesh(writer, power);
+                try {
+                    assertEquals(RedstoneEmission.bucketKey("cutout", power), mesh.surfaces().get(0).bucketKey());
+                    assertEquals(powered.surfaces().get(0).vertexBuffer(), mesh.surfaces().get(0).vertexBuffer());
+                    assertNotEquals(previousHash, mesh.contentHash());
+                    assertNotEquals(previousCategoryHash, mesh.categoryContentHash(ChunkManager.CAT_CUTOUT));
+                    previousHash = mesh.contentHash();
+                    previousCategoryHash = mesh.categoryContentHash(ChunkManager.CAT_CUTOUT);
+                } finally {
+                    mesh.release();
+                }
+            }
+        } finally {
+            powered.release();
+        }
+    }
+
+    @Test
+    void powerBucketsCoexistWithOrdinaryGeometryAndStillRemoveDuplicateBackfaces() {
+        DirectQuadWriter writer = new DirectQuadWriter();
+        writer.beginSection();
+        for (int power = 0; power <= 15; power++) {
+            writer.stageQuad(FRONT_POSITIONS, FRONT_UVS, 0, 0, 1, 0xFF660000,
+                    CUTOUT_SPRITE, 0, 0, 1, 1, "cutout", power);
+            writer.stageQuad(BACK_POSITIONS, DISTINCT_BACK_UVS, 0, 0, -1, 0xFF660000,
+                    CUTOUT_SPRITE, 0, 0, 1, 1, "cutout", power);
+            writer.flushBlock(null);
+        }
+        writer.stageQuad(FRONT_POSITIONS, FRONT_UVS, 0, 0, 1, 0xFF660000,
+                CUTOUT_SPRITE, 0, 0, 1, 1, "cutout");
+        writer.flushBlock(null);
+        SectionMeshData mesh = writer.buildMeshData();
+        try {
+            assertEquals(16, mesh.surfaces().size());
+            for (SectionMeshData.Surface surface : mesh.surfaces()) {
+                assertEquals(surface.bucketKey().equals("cutout") ? 8 : 4, surface.vertexCount());
+            }
+        } finally {
+            mesh.release();
+        }
+    }
+
+    @Test
+    void oppositeFacesWithDifferentEmissionDoNotCollapse() {
+        DirectQuadWriter writer = new DirectQuadWriter();
+        writer.beginSection();
+        writer.stageQuad(FRONT_POSITIONS, FRONT_UVS, 0, 0, 1, 0xFF660000,
+                CUTOUT_SPRITE, 0, 0, 1, 1, "cutout", 1);
+        writer.stageQuad(BACK_POSITIONS, DISTINCT_BACK_UVS, 0, 0, -1, 0xFF660000,
+                CUTOUT_SPRITE, 0, 0, 1, 1, "cutout", 2);
+        writer.flushBlock(null);
+        SectionMeshData mesh = writer.buildMeshData();
+        try {
+            assertEquals(2, mesh.surfaces().size());
+            assertEquals(8, mesh.surfaces().stream().mapToInt(SectionMeshData.Surface::vertexCount).sum());
+        } finally {
+            mesh.release();
+        }
+    }
+
+    private static SectionMeshData dustMesh(DirectQuadWriter writer, int emissionPower) {
+        writer.beginSection();
+        writer.stageQuad(FRONT_POSITIONS, FRONT_UVS, 0, 0, 1, 0xFF660000,
+                CUTOUT_SPRITE, 0, 0, 1, 1, "cutout", emissionPower);
+        writer.flushBlock(null);
+        return writer.buildMeshData();
+    }
 
     private static final Identifier CUTOUT_SPRITE = Identifier.ofVanilla("test/cutout");
     private static final float[] FRONT_POSITIONS = {
