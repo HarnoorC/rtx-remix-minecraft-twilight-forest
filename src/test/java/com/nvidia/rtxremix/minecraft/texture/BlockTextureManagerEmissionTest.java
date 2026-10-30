@@ -8,7 +8,6 @@ import com.nvidia.rtxremix.MaterialInfo;
 import com.nvidia.rtxremix.minecraft.asset.RemixTexture;
 
 import java.lang.reflect.Field;
-import java.lang.reflect.Method;
 import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -21,21 +20,23 @@ import org.junit.jupiter.api.Test;
 
 class BlockTextureManagerEmissionTest {
 
+    private static final long ALBEDO = 1, NORMAL = 2, EMISSIVE = 6;
+
     @Test
     void workerMaterialLookupNeverCreatesResources() {
         BlockTextureManager manager = new BlockTextureManager(null);
         CompletableFuture.runAsync(() -> {
-            for (int layer = 0; layer < BlockTextureManager.LAYER_COUNT; layer++) {
-                for (int power = 0; power < 15; power++) {
-                    assertNull(manager.getRedstoneAtlasMaterial(layer, false, power));
-                    assertNull(manager.getRedstoneAtlasMaterial(layer, true, power));
+            for (RedstoneEmission emission : RedstoneEmission.values()) {
+                for (int layer = 0; layer < BlockTextureManager.LAYER_COUNT; layer++) {
+                    assertNull(manager.getAtlasMaterial(layer, false, emission));
+                    assertNull(manager.getAtlasMaterial(layer, true, emission));
                 }
             }
         }).join();
     }
 
     @Test
-    void dustPowerScalesOnlyEmissionAndSharesTheAnimatedAtlasTextures() throws Exception {
+    void dustStatesShareTheAtlasTexturesAndDifferOnlyInEmission() throws Exception {
         BlockTextureManager manager = new BlockTextureManager(null);
         String[] textures = {"atlasAlbedo", "atlasNormalTex", "atlasHeightTex", "atlasRoughnessTex",
                 "atlasMetallicTex", "atlasEmissive", "atlasSssTex", "atlasSssAlbedoTex"};
@@ -44,32 +45,31 @@ class BlockTextureManagerEmissionTest {
             field.setAccessible(true);
             field.set(manager, new TestTexture(i + 1));
         }
-        Method build = BlockTextureManager.class.getDeclaredMethod(
-                "redstoneAtlasMaterialInfo", int.class, boolean.class, int.class);
-        build.setAccessible(true);
         manager.setTerrainEmissionMultiplier(0.25f);
         manager.commitTerrainEmissionMultiplier();
-        for (int layer = 0; layer < BlockTextureManager.LAYER_COUNT; layer++) {
+        for (int layer : new int[] {BlockTextureManager.L_SOLID, BlockTextureManager.L_CUTOUT,
+                BlockTextureManager.L_CUTOUT_MIPPED}) {
             for (boolean sss : new boolean[] {false, true}) {
-                for (int power = 0; power <= 15; power++) {
-                    MaterialInfo info = (MaterialInfo) build.invoke(manager, layer, sss, power);
-                    assertEquals(1L, info.albedoTexture);
-                    assertEquals(2L, info.normalTexture);
+                MaterialInfo ordinary = manager.atlasMaterialInfo(layer, sss, RedstoneEmission.NONE);
+                MaterialInfo unpowered = manager.atlasMaterialInfo(layer, sss, RedstoneEmission.UNPOWERED);
+                MaterialInfo powered = manager.atlasMaterialInfo(layer, sss, RedstoneEmission.POWERED);
+                // Shared emission would light every other use of the dust sprites; dust glows
+                // from its own albedo, which the runtime tints by the power colour.
+                assertEquals(EMISSIVE, ordinary.emissiveTexture);
+                assertEquals(0L, unpowered.emissiveTexture);
+                assertEquals(ALBEDO, powered.emissiveTexture);
+                assertEquals(25f, powered.emissiveIntensity, 0.00001f);
+                for (MaterialInfo info : new MaterialInfo[] {ordinary, unpowered, powered}) {
+                    assertEquals(ALBEDO, info.albedoTexture);
+                    assertEquals(NORMAL, info.normalTexture);
                     assertEquals(0, info.filterMode);
-                    assertEquals(power == 0 ? 0L : 6L, info.emissiveTexture);
-                    assertEquals(25f * power / 15, info.emissiveIntensity, 0.00001f);
-                    if (layer == BlockTextureManager.L_TRANS || layer == BlockTextureManager.L_GLASS) {
-                        assertNull(info.opaqueExt);
-                        assertEquals(layer == BlockTextureManager.L_GLASS ? 1 : 0, info.translucentExt.useDiffuseLayer);
-                    } else {
-                        assertNull(info.translucentExt);
-                        assertEquals(3L, info.opaqueExt.heightTexture);
-                        assertEquals(4L, info.opaqueExt.roughnessTexture);
-                        assertEquals(5L, info.opaqueExt.metallicTexture);
-                        assertEquals(1, info.opaqueExt.useDrawCallAlphaState);
-                        if (sss) assertNotNull(info.opaqueExt.subsurfaceExt);
-                        else assertNull(info.opaqueExt.subsurfaceExt);
-                    }
+                    assertNull(info.translucentExt);
+                    assertEquals(3L, info.opaqueExt.heightTexture);
+                    assertEquals(4L, info.opaqueExt.roughnessTexture);
+                    assertEquals(5L, info.opaqueExt.metallicTexture);
+                    assertEquals(1, info.opaqueExt.useDrawCallAlphaState);
+                    if (sss) assertNotNull(info.opaqueExt.subsurfaceExt);
+                    else assertNull(info.opaqueExt.subsurfaceExt);
                 }
             }
         }

@@ -22,7 +22,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Objects;
-import java.util.function.Function;
+import java.util.function.BiFunction;
 
 /**
  * Merges the section captures from one chunk column into category-specific,
@@ -81,14 +81,14 @@ public final class BlockMeshBuilder {
                                       int categoryMask,
                                       BlockTextureManager tex) {
         return buildColumnMesh(chunkX, chunkZ, sections, categoryMask,
-                key -> resolveMaterial(key, tex));
+                (key, emission) -> resolveMaterial(key, emission, tex));
     }
 
     MeshPage[] buildColumnMesh(int chunkX,
                                int chunkZ,
                                List<TerrainState.SectionSnapshot> sections,
                                int categoryMask,
-                               Function<String, RemixMaterial> materialResolver) {
+                               BiFunction<String, RedstoneEmission, RemixMaterial> materialResolver) {
         Objects.requireNonNull(sections, "sections");
         Objects.requireNonNull(materialResolver, "materialResolver");
         validateCategoryMask(categoryMask);
@@ -118,7 +118,8 @@ public final class BlockMeshBuilder {
                     if (cat < 0 || cat >= catCount || !categorySelected(categoryMask, cat)) continue;
 
                     String bucketKey = surf.bucketKey();
-                    int bucketIndex = findBucket(buckets, bucketCount, cat, bucketKey);
+                    RedstoneEmission emission = surf.redstoneEmission();
+                    int bucketIndex = findBucket(buckets, bucketCount, cat, bucketKey, emission);
                     SurfaceBucket bucket;
                     if (bucketIndex >= 0) {
                         bucket = buckets[bucketIndex];
@@ -126,7 +127,7 @@ public final class BlockMeshBuilder {
                         if (bucketCount == buckets.length) {
                             buckets = Arrays.copyOf(buckets, buckets.length * 2);
                         }
-                        bucket = new SurfaceBucket(cat, bucketKey);
+                        bucket = new SurfaceBucket(cat, bucketKey, emission);
                         buckets[bucketCount++] = bucket;
                     }
                     bucket.add(surf,
@@ -143,7 +144,7 @@ public final class BlockMeshBuilder {
                     SurfaceBucket bucket = buckets[i];
                     if (bucket.category != c || bucket.count == 0) continue;
 
-                    RemixMaterial mat = materialResolver.apply(bucket.key);
+                    RemixMaterial mat = materialResolver.apply(bucket.key, bucket.emission);
                     if (mat == null) continue;
 
                     requireCanonicalQuadIndices(bucket);
@@ -168,13 +169,15 @@ public final class BlockMeshBuilder {
     private static final class SurfaceBucket {
         final int category;
         final String key;
+        final RedstoneEmission emission;
         SurfaceRef[] surfaces = new SurfaceRef[4];
         int count;
         int totalVerts;
 
-        SurfaceBucket(int category, String key) {
+        SurfaceBucket(int category, String key, RedstoneEmission emission) {
             this.category = category;
             this.key = key;
+            this.emission = emission;
         }
 
         void add(SectionMeshData.Surface surface, int xOff, int yOff, int zOff) {
@@ -372,28 +375,26 @@ public final class BlockMeshBuilder {
         }
     }
 
-    private static int findBucket(SurfaceBucket[] buckets, int bucketCount, int category, String key) {
+    private static int findBucket(SurfaceBucket[] buckets, int bucketCount, int category, String key,
+                                  RedstoneEmission emission) {
         for (int i = 0; i < bucketCount; i++) {
             SurfaceBucket bucket = buckets[i];
-            if (bucket.category == category && Objects.equals(bucket.key, key)) {
+            if (bucket.category == category && bucket.emission == emission
+                    && Objects.equals(bucket.key, key)) {
                 return i;
             }
         }
         return -1;
     }
 
-    private RemixMaterial resolveMaterial(String bucketKey, BlockTextureManager tex) {
-        RedstoneEmission.Bucket redstone = RedstoneEmission.resolve(bucketKey);
-        if (redstone != null) bucketKey = redstone.baseKey();
+    private RemixMaterial resolveMaterial(String bucketKey, RedstoneEmission emission,
+                                          BlockTextureManager tex) {
         boolean isSss = bucketKey.endsWith("_sss");
         String baseName = isSss ? bucketKey.substring(0, bucketKey.length() - 4) : bucketKey;
 
         if ("water".equals(baseName)) return tex.getWaterSurfaceMaterial();
 
-        int layerType = BlockTextureManager.layerType(baseName);
-        if (redstone != null) return tex.getRedstoneAtlasMaterial(layerType, isSss, redstone.power());
-        return isSss ? tex.getAtlasMaterialSSS(layerType)
-                     : tex.getAtlasMaterial(layerType);
+        return tex.getAtlasMaterial(BlockTextureManager.layerType(baseName), isSss, emission);
     }
 
 

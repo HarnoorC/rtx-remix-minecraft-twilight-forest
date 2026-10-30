@@ -7,7 +7,7 @@ package com.nvidia.rtxremix.minecraft.terrain.capture;
 import com.nvidia.rtxremix.RemixAPI;
 import com.nvidia.rtxremix.minecraft.light.BlockLightRuleManager;
 import com.nvidia.rtxremix.minecraft.texture.BlockTextureManager;
-import com.nvidia.rtxremix.minecraft.texture.BuiltinEmission;
+import com.nvidia.rtxremix.minecraft.texture.RedstoneEmission;
 import com.nvidia.rtxremix.minecraft.light.LightEntry;
 import com.nvidia.rtxremix.minecraft.profiling.ProfileScope;
 import net.fabricmc.fabric.api.client.render.fluid.v1.FluidRenderHandler;
@@ -17,7 +17,6 @@ import net.minecraft.block.Block;
 import net.minecraft.block.BlockRenderType;
 import net.minecraft.block.BlockState;
 import net.minecraft.block.Blocks;
-import net.minecraft.block.RedstoneWireBlock;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.color.block.BlockColors;
 import net.minecraft.client.render.RenderLayer;
@@ -161,8 +160,6 @@ public final class BlockQuadEmitter {
     private final long[] fluidStateKnown = new long[64];
     private int blockCount, fluidCount;
     private int tintValidMask;
-    /** -1 for other blocks; wire power is sampled once for both model capture paths. */
-    private int redstonePower = -1;
     private int waterColorKnownMask;
     private FluidState waterTopCellCacheFluid;
     private BlockRenderView waterTopCullWorld;
@@ -323,7 +320,6 @@ public final class BlockQuadEmitter {
         blockCount++;
         mutablePos.set(pos);
         tintValidMask = 0;
-        redstonePower = state.isOf(Blocks.REDSTONE_WIRE) ? state.get(RedstoneWireBlock.POWER) : -1;
 
         // Vanilla derives model randomisation from the block position, in the
         // same BlockModelRenderer.render this emitter replaces. It also
@@ -365,6 +361,7 @@ public final class BlockQuadEmitter {
         } else {
             emitVanillaBlock(world, state, model, layerName, lx, ly, lz);
         }
+        writer.flushBlock(texManager, RedstoneEmission.of(state));
     }
 
     /**
@@ -415,8 +412,6 @@ public final class BlockQuadEmitter {
                 stageBakedQuad(bq, layerName, state, world, lx, ly, lz);
             }
         }
-
-        writer.flushBlock(texManager);
     }
 
     private void stageBakedQuad(BakedQuad bq, String layerName,
@@ -466,11 +461,7 @@ public final class BlockQuadEmitter {
         float sv1 = sprite != null ? sprite.getMaxV() : 1;
 
         writer.stageQuad(tempPositions, tempUvs, nx, ny, nz, color,
-                spriteId, su0, sv0, su1, sv1, layerName, dustEmissionPower(redstonePower, spriteId));
-    }
-
-    static int dustEmissionPower(int wirePower, Identifier spriteId) {
-        return BuiltinEmission.isRedstoneDustSurface(spriteId) ? wirePower : -1;
+                spriteId, su0, sv0, su1, sv1, layerName);
     }
 
     private static final Identifier WATER_STILL_SPRITE = Identifier.ofVanilla("block/water_still");
@@ -542,10 +533,8 @@ public final class BlockQuadEmitter {
             writer.stageQuad(tempPositions, fq.uvs(), fq.nx(), fq.ny(), fq.nz(),
                     fq.color(), fq.spriteId(),
                     fq.spriteU0(), fq.spriteV0(), fq.spriteU1(), fq.spriteV1(),
-                    layerName, dustEmissionPower(redstonePower, fq.spriteId()));
+                    layerName);
         }
-
-        writer.flushBlock(texManager);
     }
 
     // --- Fluid geometry ---

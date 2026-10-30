@@ -4,55 +4,42 @@
  */
 package com.nvidia.rtxremix.minecraft.texture;
 
-import java.util.HashMap;
-import java.util.Map;
+import net.minecraft.block.BlockState;
+import net.minecraft.block.RedstoneWireBlock;
 
-/** Power-specific atlas buckets shared by terrain capture and material resolution. */
-public final class RedstoneEmission {
-    public static final int MAX_POWER = 15;
-    private static final Map<String, String[]> KEYS = buildKeys();
-    private static final Map<String, Bucket> BUCKETS = buildBuckets();
+/**
+ * Which atlas material a terrain surface takes for redstone dust's power state.
+ *
+ * <p>Dust draws every power level from the same sprites and tints them by power, so the
+ * sprites cannot say whether it glows. Powered dust emits its own albedo, which the runtime
+ * tints by the vertex colour exactly as it tints the albedo, so the glow dims with vanilla's
+ * power colour; unpowered dust emits nothing. Only placed dust knows its power, so nothing
+ * else drawing these sprites glows.
+ */
+public enum RedstoneEmission {
+    /** Not dust: the ordinary atlas material. */
+    NONE,
+    /** Dust at power 0: the atlas material without emission. */
+    UNPOWERED,
+    /** Dust at power 1 to 15: the atlas material emitting its albedo. */
+    POWERED;
 
-    private RedstoneEmission() {}
-
-    public record Bucket(String baseKey, int power) {}
-
-    /** Returns a cached key; negative power denotes an unrelated surface. */
-    public static String bucketKey(String baseKey, int power) {
-        if (power < 0 || power == MAX_POWER) return baseKey;
-        return KEYS.get(baseKey)[power];
-    }
-
-    /** Returns the material variant described by a key, or null for an ordinary bucket. */
-    public static Bucket resolve(String key) {
-        return BUCKETS.get(key);
-    }
-
-    /** Scales emission in addition to vanilla's vertex tint, leaving full power unchanged. */
-    public static float multiplier(int power) {
-        return power / (float) MAX_POWER;
-    }
-
-    private static Map<String, String[]> buildKeys() {
-        Map<String, String[]> keys = new HashMap<>();
-        for (String base : new String[] {"solid", "cutout", "cutout_mipped", "translucent", "glass",
-                "solid_sss", "cutout_sss", "cutout_mipped_sss"}) {
-            String[] levels = new String[MAX_POWER];
-            for (int power = 0; power < MAX_POWER; power++) {
-                levels[power] = base + "_redstone_" + power;
-            }
-            keys.put(base, levels);
+    /**
+     * Returns the state every quad of this block's model is drawn with. A redstone wire's
+     * model is all dust, whatever sprites a pack gives it, so the whole block follows its power.
+     */
+    public static RedstoneEmission of(BlockState state) {
+        if (!(state.getBlock() instanceof RedstoneWireBlock) || !state.contains(RedstoneWireBlock.POWER)) {
+            return NONE;
         }
-        return Map.copyOf(keys);
+        return forPower(state.get(RedstoneWireBlock.POWER));
     }
 
-    private static Map<String, Bucket> buildBuckets() {
-        Map<String, Bucket> buckets = new HashMap<>();
-        KEYS.forEach((base, levels) -> {
-            for (int power = 0; power < levels.length; power++) {
-                buckets.put(levels[power], new Bucket(base, power));
-            }
-        });
-        return Map.copyOf(buckets);
+    static RedstoneEmission forPower(int power) {
+        return power > 0 ? POWERED : UNPOWERED;
+    }
+
+    public boolean isDust() {
+        return this != NONE;
     }
 }

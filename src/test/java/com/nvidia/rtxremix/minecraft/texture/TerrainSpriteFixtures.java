@@ -17,13 +17,28 @@ public final class TerrainSpriteFixtures {
     private TerrainSpriteFixtures() {}
 
     public static BlockTextureManager.SpriteEntry sprite(String name, int x, boolean transparent, boolean sss) {
-        Identifier id = Identifier.ofVanilla("block/" + name);
         NativeImage image = new NativeImage(16, 16, false);
         for (int y = 0; y < 16; y++) {
             for (int col = 0; col < 16; col++) {
                 image.setColor(col, y, transparent && col < 4 ? 0 : 0xFFFFFFFF);
             }
         }
+        return sprite(name, x, image, sss);
+    }
+
+    /** A 16x16 sprite whose rows mark opaque texels with {@code #} and transparent ones with {@code .}. */
+    public static BlockTextureManager.SpriteEntry sprite(String name, int x, String[] rows, boolean sss) {
+        NativeImage image = new NativeImage(16, 16, false);
+        for (int y = 0; y < 16; y++) {
+            for (int col = 0; col < 16; col++) {
+                image.setColor(col, y, rows[y].charAt(col) == '#' ? 0xFFFFFFFF : 0);
+            }
+        }
+        return sprite(name, x, image, sss);
+    }
+
+    private static BlockTextureManager.SpriteEntry sprite(String name, int x, NativeImage image, boolean sss) {
+        Identifier id = Identifier.ofVanilla("block/" + name);
         try (TestContents contents = new TestContents(id, image)) {
             Sprite sprite = new Sprite(BlockTextureManager.BLOCK_ATLAS_ID, contents, 64, 64, x, 16) {};
             BlockTextureManager.SpriteEntry entry = new BlockTextureManager.SpriteEntry(x / 16, id, sprite);

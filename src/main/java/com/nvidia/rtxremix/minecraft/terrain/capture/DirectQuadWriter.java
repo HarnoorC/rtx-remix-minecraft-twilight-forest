@@ -45,6 +45,9 @@ public final class DirectQuadWriter {
     private static final int MAX_BLOCK_QUADS = 128;
     private static final float DECAL_NORMAL_DOT_EPSILON = 0.999f;
     private static final float DECAL_PLANE_DISTANCE_EPSILON = 1.0E-3f;
+    /** Texels per block edge beyond which a dust stack is left uncut; bounds the owner grid. */
+    private static final int MAX_STACK_RESOLUTION = 64;
+    private static final float GRID_EPSILON = 1.0E-4f;
     private static final float DECAL_OVERLAP_EPSILON = 1.0E-4f;
 
     /**
@@ -69,30 +72,39 @@ public final class DirectQuadWriter {
 
     // --- per-bucket output ---
 
+    private static final RedstoneEmission[] REDSTONE_EMISSIONS = RedstoneEmission.values();
+
+    /** Buckets by category, then {@link RedstoneEmission}, then material key. */
     @SuppressWarnings("unchecked")
-    private final Map<String, BucketBuffer>[] bucketsByCategory = new Map[ChunkManager.CAT_COUNT];
+    private final Map<String, BucketBuffer>[][] buckets =
+            new Map[ChunkManager.CAT_COUNT][REDSTONE_EMISSIONS.length];
     private final List<BucketBuffer> bucketOrder = new ArrayList<>();
     private int lastBucketCategory = -1;
     private String lastBucketKey;
+    private RedstoneEmission lastBucketEmission;
     private BucketBuffer lastBucket;
 
     public DirectQuadWriter() {
-        for (int i = 0; i < bucketsByCategory.length; i++) {
-            bucketsByCategory[i] = new LinkedHashMap<>();
+        for (Map<String, BucketBuffer>[] byEmission : buckets) {
+            for (int i = 0; i < byEmission.length; i++) {
+                byEmission[i] = new LinkedHashMap<>();
+            }
         }
     }
 
     static final class BucketBuffer {
         final int category;
         final String key;
+        final RedstoneEmission redstoneEmission;
         ByteBuffer vertices;
         int vertexCount;
         int indexCount;
         int vertexHash;
 
-        BucketBuffer(int category, String key) {
+        BucketBuffer(int category, String key, RedstoneEmission redstoneEmission) {
             this.category = category;
             this.key = key;
+            this.redstoneEmission = redstoneEmission;
             vertices = ByteBuffer.allocate(INITIAL_VERT_SIZE).order(ByteOrder.LITTLE_ENDIAN);
             totalAllocatedBytes.addAndGet(INITIAL_VERT_SIZE);
         }
@@ -156,6 +168,7 @@ public final class DirectQuadWriter {
         int appendToContentHash(int h) {
             int surfaceHash = category;
             surfaceHash = surfaceHash * 31 + key.hashCode();
+            surfaceHash = surfaceHash * 31 + redstoneEmission.ordinal();
             surfaceHash = surfaceHash * 31 + vertexCount;
             surfaceHash = surfaceHash * 31 + indexCount;
             surfaceHash = surfaceHash * 31 + 1; // canonical quad indices
@@ -209,9 +222,17 @@ public final class DirectQuadWriter {
             new BlockTextureManager.SpriteEntry[MAX_BLOCK_QUADS];
     private final int[] stageCategory = new int[MAX_BLOCK_QUADS];
     private final boolean[] stageDiscarded = new boolean[MAX_BLOCK_QUADS];
-    private final int[] stageEmissionPower = new int[MAX_BLOCK_QUADS];
-    private final boolean[] stageSubsurface = new boolean[MAX_BLOCK_QUADS];
-    private final int[] stageDustGroup = new int[MAX_BLOCK_QUADS];
+    private final boolean[] stageStacked = new boolean[MAX_BLOCK_QUADS];
+
+    // --- one dust layer stack being cut apart (see writeDustLayerStacks) ---
+
+    private final int[] stackMembers = new int[MAX_BLOCK_QUADS];
+    private final int[] stackOwners = new int[MAX_STACK_RESOLUTION * MAX_STACK_RESOLUTION];
+    private final float[] piecePos = new float[12];
+    private final float[] pieceUvs = new float[8];
+    private int stackAxisA, stackAxisB, stackResolution, stackColumns, stackRows;
+    private float stackMinA, stackMinB;
+    private float quadS, quadT;
 
     // --- public API ---
 
@@ -230,6 +251,7 @@ public final class DirectQuadWriter {
         for (BucketBuffer bb : bucketOrder) bb.reset();
         lastBucketCategory = -1;
         lastBucketKey = null;
+        lastBucketEmission = null;
         lastBucket = null;
         stageCount = 0;
     }
@@ -239,12 +261,15 @@ public final class DirectQuadWriter {
         for (BucketBuffer bb : bucketOrder) {
             totalAllocatedBytes.addAndGet(-(long) bb.allocatedBytes());
         }
-        for (Map<String, BucketBuffer> buckets : bucketsByCategory) {
-            buckets.clear();
+        for (Map<String, BucketBuffer>[] byEmission : buckets) {
+            for (Map<String, BucketBuffer> byKey : byEmission) {
+                byKey.clear();
+            }
         }
         bucketOrder.clear();
         lastBucketCategory = -1;
         lastBucketKey = null;
+        lastBucketEmission = null;
         lastBucket = null;
     }
 
@@ -257,16 +282,6 @@ public final class DirectQuadWriter {
                            int color, Identifier spriteId,
                            float su0, float sv0, float su1, float sv1,
                            String renderLayer) {
-        stageQuad(positions, uvs, nx, ny, nz, color, spriteId,
-                su0, sv0, su1, sv1, renderLayer, -1);
-    }
-
-    /** Stages a quad with dust emission power 0–15, or -1 for an ordinary material. */
-    public void stageQuad(float[] positions, float[] uvs,
-                          float nx, float ny, float nz,
-                          int color, Identifier spriteId,
-                          float su0, float sv0, float su1, float sv1,
-                          String renderLayer, int emissionPower) {
         if (stageCount >= MAX_BLOCK_QUADS) return;
         int i = stageCount++;
         System.arraycopy(positions, 0, stagePos, i * 12, 12);
@@ -279,7 +294,6 @@ public final class DirectQuadWriter {
         stageLayer[i] = renderLayer;
         stageOverlay[i] = false;
         stageDiscarded[i] = false;
-        stageEmissionPower[i] = emissionPower;
     }
 
     /**
@@ -305,7 +319,7 @@ public final class DirectQuadWriter {
         }
         final String bucketKey = bk;
 
-        BucketBuffer bb = getBucket(cat, bucketKey);
+        BucketBuffer bb = getBucket(cat, bucketKey, RedstoneEmission.NONE);
 
         int boundsMin = isWater ? HardcodedVertex.packHalf2x16(0, 0)
                                 : HardcodedVertex.packHalf2x16(su0, sv0);
@@ -319,105 +333,233 @@ public final class DirectQuadWriter {
      * Runs overlay detection on staged quads and flushes them all to
      * the appropriate bucket buffers. Call once per block after all
      * {@link #stageQuad} calls for that block.
+     *
+     * @param redstoneEmission the block's dust state, which every quad of the block shares;
+     *                         {@link RedstoneEmission#NONE} for anything but redstone wire
      */
-    public void flushBlock(BlockTextureManager tex) {
+    public void flushBlock(BlockTextureManager tex, RedstoneEmission redstoneEmission) {
         if (stageCount == 0) return;
-        detectOverlays(tex);
+        boolean dust = redstoneEmission.isDust();
+        // Dust layers are cut apart below, so none of them stays over another as a decal.
+        detectOverlays(tex, !dust);
 
         int solidType = BlockTextureManager.layerType("solid");
         classifyStagedQuads(solidType);
-        groupDustCutoutLayers(tex);
         discardDuplicateCutoutBackfaces();
+        if (dust) writeDustLayerStacks(tex, solidType, redstoneEmission);
 
         for (int i = 0; i < stageCount; i++) {
             if (stageDiscarded[i]) continue;
-
-            String layer = stageLayer[i];
-            int layerType = BlockTextureManager.layerType(layer);
-
-            int cat = stageCategory[i];
-
-            String bk = layer;
-            if (cat == ChunkManager.CAT_SOLID && layerType != solidType) {
-                bk = "solid";
-            }
-            if (stageSubsurface[i]) {
-                bk = sssBucketKeyForOriginalLayer(layer, bk);
-            }
-            final String bucketKey = RedstoneEmission.bucketKey(bk, stageEmissionPower[i]);
-
-            BucketBuffer bb = getBucket(cat, bucketKey);
-
-            int boundsMin = HardcodedVertex.packHalf2x16(stageSU0[i], stageSV0[i]);
-            int boundsMax = HardcodedVertex.packHalf2x16(stageSU1[i], stageSV1[i]);
-
-            bb.writeQuad(stagePos, i * 12, stageUvs, i * 8,
-                         stageNx[i], stageNy[i], stageNz[i],
-                         stageColor[i], boundsMin, boundsMax);
+            writeStagedQuad(i, bucketFor(i, tex, solidType, redstoneEmission), stagePos, i * 12, stageUvs, i * 8);
         }
 
         Arrays.fill(stageSpriteId, 0, stageCount, null);
         Arrays.fill(stageLayer, 0, stageCount, null);
         Arrays.fill(stageSpriteEntry, 0, stageCount, null);
         Arrays.fill(stageDiscarded, 0, stageCount, false);
+        Arrays.fill(stageStacked, 0, stageCount, false);
         stageCount = 0;
     }
 
-    private void groupDustCutoutLayers(BlockTextureManager tex) {
-        int dustQuads = 0;
-        for (int i = 0; i < stageCount; i++) {
-            stageDustGroup[i] = i;
-            if (isDustCutout(i)) dustQuads++;
-            BlockTextureManager.SpriteEntry sprite = stageSpriteEntry[i];
-            stageSubsurface[i] = sprite != null && sprite.hasSSS && tex != null
-                    && tex.getAtlasMaterialSSS(BlockTextureManager.layerType(stageLayer[i])) != null;
+    private BucketBuffer bucketFor(int i, BlockTextureManager tex, int solidType, RedstoneEmission redstoneEmission) {
+        String layer = stageLayer[i];
+        int layerType = BlockTextureManager.layerType(layer);
+        BlockTextureManager.SpriteEntry se = stageSpriteEntry[i];
+        int cat = stageCategory[i];
+
+        String bk = layer;
+        if (cat == ChunkManager.CAT_SOLID && layerType != solidType) {
+            bk = "solid";
         }
-        if (dustQuads < 2) return;
-        for (int i = 0; i < stageCount; i++) {
-            if (!isDustCutout(i)) continue;
-            for (int j = 0; j < i; j++) {
-                if (!isDustCutoutPair(i, j) || !isCoplanarOverlapping(i, j, true)) continue;
-                int a = dustGroup(i), b = dustGroup(j);
-                stageDustGroup[Math.max(a, b)] = Math.min(a, b);
+        if (se != null && se.hasSSS && tex != null && tex.getAtlasMaterialSSS(layerType) != null) {
+            bk = sssBucketKeyForOriginalLayer(layer, bk);
+        }
+        // Dust materials exist only for the alpha-tested and opaque layer types.
+        RedstoneEmission emission = isBlendedLayer(layer) ? RedstoneEmission.NONE : redstoneEmission;
+        return getBucket(cat, bk, emission);
+    }
+
+    private void writeStagedQuad(int i, BucketBuffer bb, float[] positions, int posOff, float[] uvs, int uvOff) {
+        int boundsMin = HardcodedVertex.packHalf2x16(stageSU0[i], stageSV0[i]);
+        int boundsMax = HardcodedVertex.packHalf2x16(stageSU1[i], stageSV1[i]);
+        bb.writeQuad(positions, posOff, uvs, uvOff,
+                     stageNx[i], stageNy[i], stageNz[i],
+                     stageColor[i], boundsMin, boundsMax);
+    }
+
+    // --- dust layer stacks ---
+
+    /**
+     * Cuts each stack of coplanar dust layers into pieces that never overlap: every texel
+     * cell of the plane is drawn only by the last layer in paint order that is opaque there.
+     * Remix continues a ray through a transparent alpha-tested texel from just past that
+     * triangle's plane, so of overlapping coplanar layers only the first one a ray reaches is
+     * ever seen: at a corner the full-block dot would hide the half-length lines under it.
+     * A stack that is not texel-aligned, axis-aligned rectangles is left as it was staged.
+     */
+    private void writeDustLayerStacks(BlockTextureManager tex, int solidType, RedstoneEmission redstoneEmission) {
+        for (int first = 0; first < stageCount; first++) {
+            if (stageDiscarded[first] || stageStacked[first] || isBlendedLayer(stageLayer[first])) continue;
+            int members = 0;
+            for (int j = first; j < stageCount; j++) {
+                if (stageDiscarded[j] || stageStacked[j] || isBlendedLayer(stageLayer[j])) continue;
+                if (j != first && !isCoplanar(first, j)) continue;
+                stackMembers[members++] = j;
+                stageStacked[j] = true;
+            }
+            if (members < 2 || !resolveDustStack(members)) continue;
+
+            for (int k = 0; k < members; k++) {
+                int quad = stackMembers[k];
+                stageDiscarded[quad] = true;
+                BucketBuffer bb = bucketFor(quad, tex, solidType, redstoneEmission);
+                for (int y = 0; y < stackRows; y++) {
+                    int row = y * stackColumns;
+                    for (int x = 0; x < stackColumns; x++) {
+                        if (stackOwners[row + x] != k) continue;
+                        int end = x + 1;
+                        while (end < stackColumns && stackOwners[row + end] == k) end++;
+                        writeOwnedPiece(quad, x, end, y, bb);
+                        x = end - 1;
+                    }
+                }
             }
         }
-        // A stack shares alpha classification and the atlas SSS profile, but keeps
-        // each sprite's UVs, tint and paint order. Zero-thickness texels stay non-SSS.
-        for (int i = 0; i < stageCount; i++) {
-            int group = dustGroup(i);
-            stageCategory[group] = sharedDustCategory(stageCategory[group], stageCategory[i]);
-            stageSubsurface[group] |= stageSubsurface[i];
+    }
+
+    /**
+     * Fills {@link #stackOwners} with, per texel cell, the index into {@link #stackMembers} of
+     * the layer drawn there, or -1. Returns false when the stack cannot be cut on a grid.
+     */
+    private boolean resolveDustStack(int members) {
+        int first = stackMembers[0];
+        int axis = dominantAxis(stageNx[first], stageNy[first], stageNz[first]);
+        int axisA = axis == 0 ? 1 : 0;
+        int axisB = axis == 2 ? 1 : 2;
+
+        int resolution = 0;
+        float minA = Float.POSITIVE_INFINITY, maxA = Float.NEGATIVE_INFINITY;
+        float minB = Float.POSITIVE_INFINITY, maxB = Float.NEGATIVE_INFINITY;
+        for (int k = 0; k < members; k++) {
+            int quad = stackMembers[k];
+            BlockTextureManager.SpriteEntry sprite = stageSpriteEntry[quad];
+            if (sprite == null || !isAxisAlignedRectangle(quad, axisA, axisB)) return false;
+            resolution = Math.max(resolution, sprite.texelWidth());
+            for (int v = 0; v < 4; v++) {
+                float a = stagePos[quad * 12 + v * 3 + axisA];
+                float b = stagePos[quad * 12 + v * 3 + axisB];
+                minA = Math.min(minA, a); maxA = Math.max(maxA, a);
+                minB = Math.min(minB, b); maxB = Math.max(maxB, b);
+            }
         }
-        for (int i = 0; i < stageCount; i++) {
-            int group = dustGroup(i);
-            stageCategory[i] = stageCategory[group];
-            stageSubsurface[i] = stageSubsurface[group];
+        if (resolution <= 0 || resolution > MAX_STACK_RESOLUTION) return false;
+
+        int columns = Math.round((maxA - minA) * resolution);
+        int rows = Math.round((maxB - minB) * resolution);
+        if (columns <= 0 || rows <= 0 || columns * rows > stackOwners.length) return false;
+        for (int k = 0; k < members; k++) {
+            int quad = stackMembers[k];
+            for (int v = 0; v < 4; v++) {
+                if (!onGrid(stagePos[quad * 12 + v * 3 + axisA], resolution)
+                        || !onGrid(stagePos[quad * 12 + v * 3 + axisB], resolution)) return false;
+            }
         }
-    }
 
-    private static int sharedDustCategory(int a, int b) {
-        if (a == ChunkManager.CAT_OVERLAY || b == ChunkManager.CAT_OVERLAY) return ChunkManager.CAT_OVERLAY;
-        if (a == ChunkManager.CAT_CUTOUT || b == ChunkManager.CAT_CUTOUT) return ChunkManager.CAT_CUTOUT;
-        return a;
-    }
-
-    private boolean isDustCutout(int quad) {
-        return stageEmissionPower[quad] >= 0
-                && ("cutout".equals(stageLayer[quad]) || "cutout_mipped".equals(stageLayer[quad]));
-    }
-
-    private boolean isDustCutoutPair(int a, int b) {
-        return isDustCutout(a) && isDustCutout(b)
-                && stageEmissionPower[a] == stageEmissionPower[b]
-                && Objects.equals(stageLayer[a], stageLayer[b]);
-    }
-
-    private int dustGroup(int quad) {
-        while (stageDustGroup[quad] != quad) {
-            stageDustGroup[quad] = stageDustGroup[stageDustGroup[quad]];
-            quad = stageDustGroup[quad];
+        stackAxisA = axisA;
+        stackAxisB = axisB;
+        stackMinA = minA;
+        stackMinB = minB;
+        stackResolution = resolution;
+        stackColumns = columns;
+        stackRows = rows;
+        for (int y = 0; y < rows; y++) {
+            float b = minB + (y + 0.5f) / resolution;
+            for (int x = 0; x < columns; x++) {
+                float a = minA + (x + 0.5f) / resolution;
+                int owner = -1;
+                for (int k = members - 1; k >= 0 && owner < 0; k--) {
+                    if (layerIsOpaqueAt(stackMembers[k], a, b)) owner = k;
+                }
+                stackOwners[y * columns + x] = owner;
+            }
         }
-        return quad;
+        return true;
+    }
+
+    /** Whether a quad is a rectangle whose edges run along the plane's two axes. */
+    private boolean isAxisAlignedRectangle(int quad, int axisA, int axisB) {
+        int p = quad * 12;
+        for (int c = 0; c < 3; c++) {
+            float parallelogram = stagePos[p + 3 + c] + stagePos[p + 9 + c] - stagePos[p + c];
+            if (Math.abs(stagePos[p + 6 + c] - parallelogram) > GRID_EPSILON) return false;
+        }
+        boolean edge1AlongA = Math.abs(stagePos[p + 3 + axisB] - stagePos[p + axisB]) <= GRID_EPSILON;
+        boolean edge1AlongB = Math.abs(stagePos[p + 3 + axisA] - stagePos[p + axisA]) <= GRID_EPSILON;
+        boolean edge2AlongA = Math.abs(stagePos[p + 9 + axisB] - stagePos[p + axisB]) <= GRID_EPSILON;
+        boolean edge2AlongB = Math.abs(stagePos[p + 9 + axisA] - stagePos[p + axisA]) <= GRID_EPSILON;
+        return (edge1AlongA && edge2AlongB) || (edge1AlongB && edge2AlongA);
+    }
+
+    private static boolean onGrid(float coordinate, int resolution) {
+        float cells = coordinate * resolution;
+        return Math.abs(cells - Math.round(cells)) <= GRID_EPSILON * resolution;
+    }
+
+    private boolean layerIsOpaqueAt(int quad, float a, float b) {
+        if (!quadParameters(quad, a, b)) return false;
+        float s = quadS, t = quadT;
+        if (s <= 0 || s >= 1 || t <= 0 || t >= 1) return false;
+        int uv = quad * 8;
+        float u = stageUvs[uv] + s * (stageUvs[uv + 2] - stageUvs[uv]) + t * (stageUvs[uv + 6] - stageUvs[uv]);
+        float v = stageUvs[uv + 1] + s * (stageUvs[uv + 3] - stageUvs[uv + 1])
+                + t * (stageUvs[uv + 7] - stageUvs[uv + 1]);
+        return stageSpriteEntry[quad].isOpaqueAt(u, v);
+    }
+
+    /**
+     * Solves a plane point for its position across the quad, from corner 0 along the edge to
+     * corner 1 ({@link #quadS}) and along the edge to corner 3 ({@link #quadT}).
+     */
+    private boolean quadParameters(int quad, float a, float b) {
+        int p = quad * 12;
+        float originA = stagePos[p + stackAxisA], originB = stagePos[p + stackAxisB];
+        float e1a = stagePos[p + 3 + stackAxisA] - originA, e1b = stagePos[p + 3 + stackAxisB] - originB;
+        float e2a = stagePos[p + 9 + stackAxisA] - originA, e2b = stagePos[p + 9 + stackAxisB] - originB;
+        float det = e1a * e2b - e2a * e1b;
+        if (Math.abs(det) < GRID_EPSILON) return false;
+        float da = a - originA, db = b - originB;
+        quadS = (da * e2b - e2a * db) / det;
+        quadT = (e1a * db - da * e1b) / det;
+        return true;
+    }
+
+    /** Writes a run of texel cells in one row of a stack as a piece of the layer that owns them. */
+    private void writeOwnedPiece(int quad, int x, int end, int y, BucketBuffer bb) {
+        float a0 = stackMinA + (float) x / stackResolution, a1 = stackMinA + (float) end / stackResolution;
+        float b0 = stackMinB + (float) y / stackResolution, b1 = stackMinB + (float) (y + 1) / stackResolution;
+        quadParameters(quad, a0, b0);
+        float sA = quadS, tA = quadT;
+        quadParameters(quad, a1, b1);
+        float s0 = Math.min(sA, quadS), s1 = Math.max(sA, quadS);
+        float t0 = Math.min(tA, quadT), t1 = Math.max(tA, quadT);
+        // Corners in the staged quad's own order keep its winding.
+        writePieceCorner(quad, 0, s0, t0);
+        writePieceCorner(quad, 1, s1, t0);
+        writePieceCorner(quad, 2, s1, t1);
+        writePieceCorner(quad, 3, s0, t1);
+        writeStagedQuad(quad, bb, piecePos, 0, pieceUvs, 0);
+    }
+
+    private void writePieceCorner(int quad, int corner, float s, float t) {
+        int p = quad * 12, uv = quad * 8;
+        for (int c = 0; c < 3; c++) {
+            piecePos[corner * 3 + c] = stagePos[p + c] + s * (stagePos[p + 3 + c] - stagePos[p + c])
+                    + t * (stagePos[p + 9 + c] - stagePos[p + c]);
+        }
+        for (int c = 0; c < 2; c++) {
+            pieceUvs[corner * 2 + c] = stageUvs[uv + c] + s * (stageUvs[uv + 2 + c] - stageUvs[uv + c])
+                    + t * (stageUvs[uv + 6 + c] - stageUvs[uv + c]);
+        }
     }
 
     private void classifyStagedQuads(int solidType) {
@@ -459,7 +601,6 @@ public final class DirectQuadWriter {
         if (normalDot > -DECAL_NORMAL_DOT_EPSILON) return false;
 
         if (stageColor[a] != stageColor[b]
-                || stageEmissionPower[a] != stageEmissionPower[b]
                 || !Objects.equals(stageSpriteId[a], stageSpriteId[b])
                 || !Objects.equals(stageLayer[a], stageLayer[b])
                 || stageSU0[a] != stageSU0[b]
@@ -534,7 +675,7 @@ public final class DirectQuadWriter {
                     vb.flip();
 
                     surfaces.add(new SectionMeshData.Surface(
-                            bb.category, bb.key, vb, bb.vertexCount, bb.indexCount, true));
+                            bb.category, bb.key, bb.redstoneEmission, vb, bb.vertexCount, bb.indexCount, true));
                 }
 
                 SectionMeshData data = new SectionMeshData(surfaces, contentHash);
@@ -572,7 +713,7 @@ public final class DirectQuadWriter {
 
     // --- overlay detection ---
 
-    private void detectOverlays(BlockTextureManager tex) {
+    private void detectOverlays(BlockTextureManager tex, boolean allowOverlays) {
         boolean hasCandidate = false;
         boolean hasBase = false;
         for (int i = 0; i < stageCount; i++) {
@@ -587,15 +728,14 @@ public final class DirectQuadWriter {
             hasCandidate |= needsBlend;
             hasBase |= !needsBlend;
         }
-        if (!hasCandidate || !hasBase) return;
+        if (!allowOverlays || !hasCandidate || !hasBase) return;
 
         for (int i = 0; i < stageCount; i++) {
             if (!stageNeedsAlphaBlend[i]) continue;
 
             for (int j = 0; j < stageCount; j++) {
                 if (i == j || stageNeedsAlphaBlend[j]) continue;
-                if (isDustCutoutPair(i, j)) continue;
-                if (isCoplanarOverlapping(i, j, false)) {
+                if (isCoplanarOverlappingDecal(i, j)) {
                     stageOverlay[i] = true;
                     break;
                 }
@@ -620,25 +760,25 @@ public final class DirectQuadWriter {
         return se.hasTransparency(minU, minV, maxU, maxV);
     }
 
-    private boolean isCoplanarOverlapping(int overlayIdx, int baseIdx, boolean allowBackfaces) {
-        float onx = stageNx[overlayIdx], ony = stageNy[overlayIdx], onz = stageNz[overlayIdx];
-        float bnx = stageNx[baseIdx], bny = stageNy[baseIdx], bnz = stageNz[baseIdx];
-        float dot = onx * bnx + ony * bny + onz * bnz;
-        if (allowBackfaces) dot = Math.abs(dot);
+    private boolean isCoplanarOverlappingDecal(int overlayIdx, int baseIdx) {
+        if (!isCoplanar(overlayIdx, baseIdx)) {
+            return false;
+        }
+        int axis = dominantAxis(stageNx[overlayIdx], stageNy[overlayIdx], stageNz[overlayIdx]);
+        return projectedBoundsOverlap(overlayIdx * 12, baseIdx * 12, axis);
+    }
+
+    /** Whether two quads face the same way in one plane. */
+    private boolean isCoplanar(int a, int b) {
+        float anx = stageNx[a], any = stageNy[a], anz = stageNz[a];
+        float bnx = stageNx[b], bny = stageNy[b], bnz = stageNz[b];
+        float dot = anx * bnx + any * bny + anz * bnz;
         if (dot < DECAL_NORMAL_DOT_EPSILON) {
             return false;
         }
-
-        int overlayPos = overlayIdx * 12;
-        int basePos = baseIdx * 12;
-        float overlayPlane = planeDistance(onx, ony, onz, overlayPos);
-        float basePlane = planeDistance(bnx, bny, bnz, basePos);
-        if (Math.abs(overlayPlane - basePlane) > DECAL_PLANE_DISTANCE_EPSILON) {
-            return false;
-        }
-
-        int axis = dominantAxis(onx, ony, onz);
-        return projectedBoundsOverlap(overlayPos, basePos, axis);
+        float aPlane = planeDistance(anx, any, anz, a * 12);
+        float bPlane = planeDistance(bnx, bny, bnz, b * 12);
+        return Math.abs(aPlane - bPlane) <= DECAL_PLANE_DISTANCE_EPSILON;
     }
 
     private float planeDistance(float nx, float ny, float nz, int posOff) {
@@ -688,22 +828,24 @@ public final class DirectQuadWriter {
                 && bMin < aMax - DECAL_OVERLAP_EPSILON;
     }
 
-    private BucketBuffer getBucket(int category, String bucketKey) {
+    private BucketBuffer getBucket(int category, String bucketKey, RedstoneEmission emission) {
         if (category == lastBucketCategory
+                && emission == lastBucketEmission
                 && (bucketKey == lastBucketKey
                     || (bucketKey != null && bucketKey.equals(lastBucketKey)))) {
             return lastBucket;
         }
 
-        Map<String, BucketBuffer> buckets = bucketsByCategory[category];
-        BucketBuffer bb = buckets.get(bucketKey);
+        Map<String, BucketBuffer> byKey = buckets[category][emission.ordinal()];
+        BucketBuffer bb = byKey.get(bucketKey);
         if (bb == null) {
-            bb = new BucketBuffer(category, bucketKey);
-            buckets.put(bucketKey, bb);
+            bb = new BucketBuffer(category, bucketKey, emission);
+            byKey.put(bucketKey, bb);
             bucketOrder.add(bb);
         }
         lastBucketCategory = category;
         lastBucketKey = bucketKey;
+        lastBucketEmission = emission;
         lastBucket = bb;
         return bb;
     }
