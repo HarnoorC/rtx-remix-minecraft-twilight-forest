@@ -429,7 +429,8 @@ public final class DirectQuadWriter {
 
     /**
      * Fills {@link #stackOwners} with, per texel cell, the index into {@link #stackMembers} of
-     * the layer drawn there, or -1. Returns false when the stack cannot be cut on a grid.
+     * the layer drawn there, or -1. Returns false when the stack cannot be cut on a grid, or
+     * when a layer is animated, since one cut cannot follow every frame's transparency.
      */
     private boolean resolveDustStack(int members) {
         int first = stackMembers[0];
@@ -443,7 +444,7 @@ public final class DirectQuadWriter {
         for (int k = 0; k < members; k++) {
             int quad = stackMembers[k];
             BlockTextureManager.SpriteEntry sprite = stageSpriteEntry[quad];
-            if (sprite == null || !isAxisAlignedRectangle(quad, axisA, axisB)) return false;
+            if (sprite == null || sprite.isAnimated() || !isAxisAlignedRectangle(quad, axisA, axisB)) return false;
             resolution = Math.max(resolution, sprite.texelWidth());
             for (int v = 0; v < 4; v++) {
                 float a = stagePos[quad * 12 + v * 3 + axisA];

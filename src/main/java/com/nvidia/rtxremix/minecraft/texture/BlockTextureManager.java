@@ -57,9 +57,11 @@ public class BlockTextureManager {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(BlockTextureManager.class);
     public static final Identifier BLOCK_ATLAS_ID = Identifier.of("minecraft", "textures/atlas/blocks.png");
+    /** A cutout texel is drawn when its alpha is greater than this. */
+    private static final int CUTOUT_ALPHA_REFERENCE = 128;
     /** Blend state for draw calls using the atlas cutout material, which sets useDrawCallAlphaState=true. */
     public static final InstanceInfoBlendEXT ATLAS_CUTOUT_BLEND =
-            InstanceInfoBlendEXT.textureTimesVertexColorAlphaTest(128);
+            InstanceInfoBlendEXT.textureTimesVertexColorAlphaTest(CUTOUT_ALPHA_REFERENCE);
     /** Blend state for draw calls using the atlas translucent material, as terrain pairs its translucent pages. */
     public static final InstanceInfoBlendEXT ATLAS_TRANSLUCENT_BLEND =
             InstanceInfoBlendEXT.textureTimesVertexColor();
@@ -171,6 +173,9 @@ public class BlockTextureManager {
         public final boolean hasTransparency;
         final int pixW, pixH, pixX, pixY;
         private final BitSet transparentPixels;
+        /** Texels the cutout alpha test discards, or null when it keeps them all. */
+        private final BitSet cutoutClearPixels;
+        boolean animated;
         RemixTexture albedo, normal, roughness, metallic, height, emissive, sss, sssAlbedo;
         public boolean hasPBR, hasSSS;
         float[] lightColor;
@@ -181,8 +186,11 @@ public class BlockTextureManager {
             pixX = s.getX(); pixY = s.getY();
             SpriteContents contents = s.getContents();
             pixW = contents.getWidth(); pixH = contents.getHeight();
-            transparentPixels = scanTransparency(contents, pixW, pixH);
-            hasTransparency = transparentPixels != null && !transparentPixels.isEmpty();
+            NativeImage image = ((SpriteContentsAccessor) contents).getImage();
+            transparentPixels = scanAlphaAtMost(image, pixW, pixH, 254);
+            cutoutClearPixels = scanAlphaAtMost(image, pixW, pixH, CUTOUT_ALPHA_REFERENCE);
+            hasTransparency = transparentPixels != null;
+            animated = ((SpriteContentsAccessor) contents).getAnimation() != null;
         }
 
         /**
@@ -218,25 +226,33 @@ public class BlockTextureManager {
             return pixW;
         }
 
-        /** Whether the texel under an atlas-space UV is fully opaque. */
-        public boolean isOpaqueAt(float u, float v) {
-            if (!hasTransparency) return true;
-            int x = uvToMinTexel(u, u0, u1, pixW);
-            int y = uvToMinTexel(v, v0, v1, pixH);
-            return !transparentPixels.get(y * pixW + x);
+        /**
+         * Whether the sprite is animated. Its transparency is scanned from one frame only, so
+         * it says nothing about the others.
+         */
+        public boolean isAnimated() {
+            return animated;
         }
 
-        private static BitSet scanTransparency(SpriteContents contents, int w, int h) {
-            NativeImage img = ((SpriteContentsAccessor) contents).getImage();
+        /** Whether the cutout alpha test keeps the texel under an atlas-space UV. */
+        public boolean isOpaqueAt(float u, float v) {
+            if (cutoutClearPixels == null) return true;
+            int x = uvToMinTexel(u, u0, u1, pixW);
+            int y = uvToMinTexel(v, v0, v1, pixH);
+            return !cutoutClearPixels.get(y * pixW + x);
+        }
+
+        /** The texels whose alpha is at most {@code maxAlpha}, or null when there are none. */
+        private static BitSet scanAlphaAtMost(NativeImage img, int w, int h, int maxAlpha) {
             if (img == null) return null;
-            BitSet transparent = null;
+            BitSet matching = null;
             for (int y = 0; y < h; y++)
                 for (int x = 0; x < w; x++)
-                    if (((img.getColor(x, y) >> 24) & 0xFF) < 255) {
-                        if (transparent == null) transparent = new BitSet(w * h);
-                        transparent.set(y * w + x);
+                    if (((img.getColor(x, y) >> 24) & 0xFF) <= maxAlpha) {
+                        if (matching == null) matching = new BitSet(w * h);
+                        matching.set(y * w + x);
                     }
-            return transparent;
+            return matching;
         }
 
         private static int uvToMinTexel(float uv, float spriteMin, float spriteMax, int size) {
@@ -584,7 +600,7 @@ public class BlockTextureManager {
         MaterialInfoOpaqueEXT.Builder ob = MaterialInfoOpaqueEXT.builder()
                 .albedoConstant(1f, 1f, 1f).roughnessConstant(1f).metallicConstant(1f)
                 .useDrawCallAlphaState(true);
-        if (lt != L_SOLID) ob.alphaTestType(4).alphaReferenceValue(128);
+        if (lt != L_SOLID) ob.alphaTestType(4).alphaReferenceValue(CUTOUT_ALPHA_REFERENCE);
         if (roughnessTex != null) ob.roughnessTexture(roughnessTex.getHandle());
         if (metallicTex != null)  ob.metallicTexture(metallicTex.getHandle());
         if (heightTex != null)    ob.heightTexture(heightTex.getHandle()).displaceIn(POM_DISPLACE_IN);
@@ -1118,7 +1134,7 @@ public class BlockTextureManager {
 
         MaterialInfoOpaqueEXT.Builder ob = MaterialInfoOpaqueEXT.builder()
                 .albedoConstant(1f, 1f, 1f).useDrawCallAlphaState(true);
-        if (lt != L_SOLID) ob.alphaTestType(4).alphaReferenceValue(128);
+        if (lt != L_SOLID) ob.alphaTestType(4).alphaReferenceValue(CUTOUT_ALPHA_REFERENCE);
 
         MaterialInfo.Builder mb = MaterialInfo.builder()
                 .albedoTexture(se.albedo.getHandle()).filterMode(0);

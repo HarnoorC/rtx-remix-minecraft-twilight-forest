@@ -26,15 +26,31 @@ public final class TerrainSpriteFixtures {
         return sprite(name, x, image, sss);
     }
 
-    /** A 16x16 sprite whose rows mark opaque texels with {@code #} and transparent ones with {@code .}. */
+    /**
+     * A 16x16 sprite drawn from rows of texels: {@code #} opaque, {@code +} partly transparent
+     * but kept by the cutout alpha test, {@code -} partly transparent and discarded by it, and
+     * {@code .} clear.
+     */
     public static BlockTextureManager.SpriteEntry sprite(String name, int x, String[] rows, boolean sss) {
         NativeImage image = new NativeImage(16, 16, false);
         for (int y = 0; y < 16; y++) {
             for (int col = 0; col < 16; col++) {
-                image.setColor(col, y, rows[y].charAt(col) == '#' ? 0xFFFFFFFF : 0);
+                int alpha = switch (rows[y].charAt(col)) {
+                    case '#' -> 255;
+                    case '+' -> 200;
+                    case '-' -> 100;
+                    default -> 0;
+                };
+                image.setColor(col, y, alpha << 24 | 0xFFFFFF);
             }
         }
         return sprite(name, x, image, sss);
+    }
+
+    /** Marks a fixture sprite as animated, as a pack's {@code .mcmeta} animation would. */
+    public static BlockTextureManager.SpriteEntry animated(BlockTextureManager.SpriteEntry sprite) {
+        sprite.animated = true;
+        return sprite;
     }
 
     private static BlockTextureManager.SpriteEntry sprite(String name, int x, NativeImage image, boolean sss) {

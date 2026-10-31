@@ -42,6 +42,17 @@ class DustLayerStackTest {
             "................", "................", "................", "................",
             "................", "................", "................", "................",
             "................", "................", "................", "................"};
+    private static final String[] FULL = {
+            "################", "################", "################", "################",
+            "################", "################", "################", "################",
+            "################", "################", "################", "################",
+            "################", "################", "################", "################"};
+    /** Pack texels between the opaque and clear extremes, on the first row. */
+    private static final String[] PARTLY_TRANSPARENT = {
+            "+-..............", "................", "................", "................",
+            "................", "................", "................", "................",
+            "................", "................", "................", "................",
+            "................", "................", "................", "................"};
     private static final int DOT_TINT = 0xFF660000;
     private static final int LINE_TINT = 0xFF770000;
     private static final int UNTINTED = 0xFFFFFFFF;
@@ -147,6 +158,54 @@ class DustLayerStackTest {
         try {
             writer.beginSection();
             stage(writer, dot, 0.03f, 1.03f, 0, 1, 1, DOT_TINT);
+            stage(writer, line, 0, 1, 0, 0.5f, 1, LINE_TINT);
+            writer.flushBlock(new TestTextures(dot, line), RedstoneEmission.POWERED);
+            SectionMeshData mesh = writer.buildMeshData();
+            try {
+                assertEquals(1, mesh.surfaces().size());
+                assertEquals(8, mesh.surfaces().getFirst().vertexCount());
+            } finally {
+                mesh.release();
+            }
+        } finally {
+            writer.releaseBuffers();
+        }
+    }
+
+    @Test
+    void aPartlyTransparentTexelIsOwnedWhereTheAlphaTestKeepsIt() {
+        var base = TerrainSpriteFixtures.sprite("redstone_dust_dot", 0, FULL, false);
+        var top = TerrainSpriteFixtures.sprite("redstone_dust_line0", 16, PARTLY_TRANSPARENT, false);
+        DirectQuadWriter writer = new DirectQuadWriter();
+        try {
+            writer.beginSection();
+            stage(writer, base, 0, 1, 0, 1, 1, DOT_TINT);
+            stage(writer, top, 0, 1, 0, 1, 1, LINE_TINT);
+            writer.flushBlock(new TestTextures(base, top), RedstoneEmission.POWERED);
+            SectionMeshData mesh = writer.buildMeshData();
+            try {
+                int[][] drawn = drawnTints(mesh, Map.of(DOT_TINT, base, LINE_TINT, top));
+                for (int z = 0; z < 16; z++) {
+                    for (int x = 0; x < 16; x++) {
+                        assertEquals(z == 0 && x == 0 ? LINE_TINT : DOT_TINT, drawn[z][x], "texel " + x + "," + z);
+                    }
+                }
+            } finally {
+                mesh.release();
+            }
+        } finally {
+            writer.releaseBuffers();
+        }
+    }
+
+    @Test
+    void aStackWithAnAnimatedLayerIsLeftAsStaged() {
+        var dot = TerrainSpriteFixtures.sprite("redstone_dust_dot", 0, DOT, false);
+        var line = TerrainSpriteFixtures.animated(TerrainSpriteFixtures.sprite("redstone_dust_line0", 16, LINE, false));
+        DirectQuadWriter writer = new DirectQuadWriter();
+        try {
+            writer.beginSection();
+            stage(writer, dot, 0, 1, 0, 1, 1, DOT_TINT);
             stage(writer, line, 0, 1, 0, 0.5f, 1, LINE_TINT);
             writer.flushBlock(new TestTextures(dot, line), RedstoneEmission.POWERED);
             SectionMeshData mesh = writer.buildMeshData();
