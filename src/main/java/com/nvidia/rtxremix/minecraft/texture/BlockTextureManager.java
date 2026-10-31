@@ -234,12 +234,14 @@ public class BlockTextureManager {
             return animated;
         }
 
-        /** Whether the cutout alpha test keeps the texel under an atlas-space UV. */
-        public boolean isOpaqueAt(float u, float v) {
-            if (cutoutClearPixels == null) return true;
-            int x = uvToMinTexel(u, u0, u1, pixW);
-            int y = uvToMinTexel(v, v0, v1, pixH);
-            return !cutoutClearPixels.get(y * pixW + x);
+        /** The index of the texel under an atlas-space UV, clamped to the sprite. */
+        public int texelAt(float u, float v) {
+            return uvToMinTexel(v, v0, v1, pixH) * pixW + uvToMinTexel(u, u0, u1, pixW);
+        }
+
+        /** Whether the cutout alpha test keeps a texel, by its {@link #texelAt} index. */
+        public boolean isOpaqueTexel(int texel) {
+            return cutoutClearPixels == null || !cutoutClearPixels.get(texel);
         }
 
         /** The texels whose alpha is at most {@code maxAlpha}, or null when there are none. */

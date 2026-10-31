@@ -53,6 +53,8 @@ class DustLayerStackTest {
             "................", "................", "................", "................",
             "................", "................", "................", "................",
             "................", "................", "................", "................"};
+    /** How far vanilla's bake pulls a face's UVs toward their centre on a 1024-texel atlas. */
+    private static final float VANILLA_UV_INSET = 4f / 1024;
     private static final int DOT_TINT = 0xFF660000;
     private static final int LINE_TINT = 0xFF770000;
     private static final int UNTINTED = 0xFFFFFFFF;
@@ -74,31 +76,33 @@ class DustLayerStackTest {
         var line = TerrainSpriteFixtures.sprite("redstone_dust_line0", 16, LINE, false);
         DirectQuadWriter writer = new DirectQuadWriter();
         try {
-            for (RedstoneEmission emission : new RedstoneEmission[] {RedstoneEmission.UNPOWERED, RedstoneEmission.POWERED}) {
-                writer.beginSection();
-                // Vanilla's corner: the full-block dot, then a half-block line over it, each with
-                // an underside that duplicate-backface removal drops.
-                stage(writer, dot, 0, 1, 0, 1, 1, DOT_TINT);
-                stage(writer, dot, 0, 1, 0, 1, -1, DOT_TINT);
-                stage(writer, line, 0, 1, 0, 0.5f, 1, LINE_TINT);
-                stage(writer, line, 0, 1, 0, 0.5f, -1, LINE_TINT);
-                writer.flushBlock(new TestTextures(dot, line), emission);
-                SectionMeshData mesh = writer.buildMeshData();
-                try {
-                    assertEquals(1, mesh.surfaces().size());
-                    var surface = mesh.surfaces().getFirst();
-                    assertEquals(ChunkManager.CAT_CUTOUT, surface.category());
-                    assertEquals(emission, surface.redstoneEmission());
-                    int[][] drawn = drawnTints(mesh, Map.of(DOT_TINT, dot, LINE_TINT, line));
-                    for (int z = 0; z < 16; z++) {
-                        for (int x = 0; x < 16; x++) {
-                            int expected = z < 8 && LINE[z].charAt(x) == '#' ? LINE_TINT
-                                    : DOT[z].charAt(x) == '#' ? DOT_TINT : 0;
-                            assertEquals(expected, drawn[z][x], "texel " + x + "," + z);
+            for (float inset : new float[] {0, VANILLA_UV_INSET}) {
+                for (RedstoneEmission emission : new RedstoneEmission[] {RedstoneEmission.UNPOWERED, RedstoneEmission.POWERED}) {
+                    writer.beginSection();
+                    // Vanilla's corner: the full-block dot, then a half-block line over it, each with
+                    // an underside that duplicate-backface removal drops.
+                    stage(writer, dot, 0, 1, 0, 1, 1, DOT_TINT, 0, 1, 0, 1, inset);
+                    stage(writer, dot, 0, 1, 0, 1, -1, DOT_TINT, 0, 1, 0, 1, inset);
+                    stage(writer, line, 0, 1, 0, 0.5f, 1, LINE_TINT, 0, 1, 0, 0.5f, inset);
+                    stage(writer, line, 0, 1, 0, 0.5f, -1, LINE_TINT, 0, 1, 0, 0.5f, inset);
+                    writer.flushBlock(new TestTextures(dot, line), emission);
+                    SectionMeshData mesh = writer.buildMeshData();
+                    try {
+                        assertEquals(1, mesh.surfaces().size());
+                        var surface = mesh.surfaces().getFirst();
+                        assertEquals(ChunkManager.CAT_CUTOUT, surface.category());
+                        assertEquals(emission, surface.redstoneEmission());
+                        int[][] drawn = drawnTints(mesh, Map.of(DOT_TINT, dot, LINE_TINT, line));
+                        for (int z = 0; z < 16; z++) {
+                            for (int x = 0; x < 16; x++) {
+                                int expected = z < 8 && LINE[z].charAt(x) == '#' ? LINE_TINT
+                                        : DOT[z].charAt(x) == '#' ? DOT_TINT : 0;
+                                assertEquals(expected, drawn[z][x], "texel " + x + "," + z);
+                            }
                         }
+                    } finally {
+                        mesh.release();
                     }
-                } finally {
-                    mesh.release();
                 }
             }
         } finally {
@@ -220,13 +224,48 @@ class DustLayerStackTest {
         }
     }
 
+    @Test
+    void aSpriteScaledAcrossHalfABlockIsLeftAsStaged() {
+        var dot = TerrainSpriteFixtures.sprite("redstone_dust_dot", 0, DOT, false);
+        var line = TerrainSpriteFixtures.sprite("redstone_dust_line0", 16, LINE, false);
+        DirectQuadWriter writer = new DirectQuadWriter();
+        try {
+            writer.beginSection();
+            stage(writer, dot, 0, 1, 0, 1, 1, DOT_TINT);
+            // A custom model squeezing the line's 16 texels into half a block, 32 to the block.
+            stage(writer, line, 0, 0.5f, 0, 1, 1, LINE_TINT, 0, 1, 0, 1, 0);
+            writer.flushBlock(new TestTextures(dot, line), RedstoneEmission.POWERED);
+            SectionMeshData mesh = writer.buildMeshData();
+            try {
+                assertEquals(1, mesh.surfaces().size());
+                assertEquals(8, mesh.surfaces().getFirst().vertexCount());
+            } finally {
+                mesh.release();
+            }
+        } finally {
+            writer.releaseBuffers();
+        }
+    }
+
     /** Stages an upward or downward quad over [x0, x1] by [z0, z1] of the block, UVs following x and z. */
     private static void stage(DirectQuadWriter writer, BlockTextureManager.SpriteEntry sprite,
                               float x0, float x1, float z0, float z1, float normalY, int color) {
+        stage(writer, sprite, x0, x1, z0, z1, normalY, color, x0, x1, z0, z1, 0);
+    }
+
+    /**
+     * Stages an upward or downward quad over [x0, x1] by [z0, z1] of the block, sampling
+     * [s0, s1] by [r0, r1] of the sprite, as fractions, pulled toward their centre by
+     * {@code inset} as vanilla's bake does.
+     */
+    private static void stage(DirectQuadWriter writer, BlockTextureManager.SpriteEntry sprite,
+                              float x0, float x1, float z0, float z1, float normalY, int color,
+                              float s0, float s1, float r0, float r1, float inset) {
         float[] positions = {X + x0, Y, Z + z0, X + x1, Y, Z + z0, X + x1, Y, Z + z1, X + x0, Y, Z + z1};
         float du = sprite.u1 - sprite.u0, dv = sprite.v1 - sprite.v0;
-        float[] u = {sprite.u0 + x0 * du, sprite.u0 + x1 * du};
-        float[] v = {sprite.v0 + z0 * dv, sprite.v0 + z1 * dv};
+        float sc = (s0 + s1) / 2, rc = (r0 + r1) / 2;
+        float[] u = {sprite.u0 + (s0 + inset * (sc - s0)) * du, sprite.u0 + (s1 + inset * (sc - s1)) * du};
+        float[] v = {sprite.v0 + (r0 + inset * (rc - r0)) * dv, sprite.v0 + (r1 + inset * (rc - r1)) * dv};
         float[] uvs = {u[0], v[0], u[1], v[0], u[1], v[1], u[0], v[1]};
         writer.stageQuad(positions, uvs, 0, normalY, 0, color, sprite.id,
                 sprite.u0, sprite.v0, sprite.u1, sprite.v1, "cutout");

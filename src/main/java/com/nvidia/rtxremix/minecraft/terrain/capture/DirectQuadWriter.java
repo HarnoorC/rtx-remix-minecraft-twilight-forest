@@ -48,6 +48,12 @@ public final class DirectQuadWriter {
     /** Texels per block edge beyond which a dust stack is left uncut; bounds the owner grid. */
     private static final int MAX_STACK_RESOLUTION = 64;
     private static final float GRID_EPSILON = 1.0E-4f;
+    /**
+     * How far toward its corners, as a fraction of its half-width, a stack cell is sampled to
+     * check that it lies in one texel. The margin leaves room for vanilla's bake, which pulls
+     * a face's UVs toward their centre by a few hundredths of a texel.
+     */
+    private static final float CELL_SAMPLE_REACH = 0.8f;
     private static final float DECAL_OVERLAP_EPSILON = 1.0E-4f;
 
     /**
@@ -429,8 +435,9 @@ public final class DirectQuadWriter {
 
     /**
      * Fills {@link #stackOwners} with, per texel cell, the index into {@link #stackMembers} of
-     * the layer drawn there, or -1. Returns false when the stack cannot be cut on a grid, or
-     * when a layer is animated, since one cut cannot follow every frame's transparency.
+     * the layer drawn there, or -1. Returns false when the stack cannot be cut on a grid: a
+     * layer is animated, since one cut cannot follow every frame's transparency, or a cell
+     * spans more than one texel of a layer, as when a model scales a sprite's UVs.
      */
     private boolean resolveDustStack(int members) {
         int first = stackMembers[0];
@@ -479,7 +486,11 @@ public final class DirectQuadWriter {
                 float a = minA + (x + 0.5f) / resolution;
                 int owner = -1;
                 for (int k = members - 1; k >= 0 && owner < 0; k--) {
-                    if (layerIsOpaqueAt(stackMembers[k], a, b)) owner = k;
+                    int quad = stackMembers[k];
+                    int texel = layerTexelAt(quad, a, b);
+                    if (texel < 0) continue;
+                    if (!cellLiesInTexel(quad, a, b, texel)) return false;
+                    if (stageSpriteEntry[quad].isOpaqueTexel(texel)) owner = k;
                 }
                 stackOwners[y * columns + x] = owner;
             }
@@ -506,15 +517,29 @@ public final class DirectQuadWriter {
         return Math.abs(cells - Math.round(cells)) <= GRID_EPSILON * resolution;
     }
 
-    private boolean layerIsOpaqueAt(int quad, float a, float b) {
-        if (!quadParameters(quad, a, b)) return false;
+    /** The texel a quad samples at a plane point, or -1 when the point is outside the quad. */
+    private int layerTexelAt(int quad, float a, float b) {
+        if (!quadParameters(quad, a, b)) return -1;
         float s = quadS, t = quadT;
-        if (s <= 0 || s >= 1 || t <= 0 || t >= 1) return false;
+        if (s <= 0 || s >= 1 || t <= 0 || t >= 1) return -1;
         int uv = quad * 8;
         float u = stageUvs[uv] + s * (stageUvs[uv + 2] - stageUvs[uv]) + t * (stageUvs[uv + 6] - stageUvs[uv]);
         float v = stageUvs[uv + 1] + s * (stageUvs[uv + 3] - stageUvs[uv + 1])
                 + t * (stageUvs[uv + 7] - stageUvs[uv + 1]);
-        return stageSpriteEntry[quad].isOpaqueAt(u, v);
+        return stageSpriteEntry[quad].texelAt(u, v);
+    }
+
+    /**
+     * Whether the cell centred on a plane point samples one texel of a quad throughout, so the
+     * cell can be drawn or cut as a whole. A quad's UVs are affine across the cell, so its
+     * four sampled corners bound everything but a thin margin at its edges.
+     */
+    private boolean cellLiesInTexel(int quad, float a, float b, int texel) {
+        float reach = CELL_SAMPLE_REACH * 0.5f / stackResolution;
+        return layerTexelAt(quad, a - reach, b - reach) == texel
+                && layerTexelAt(quad, a + reach, b - reach) == texel
+                && layerTexelAt(quad, a - reach, b + reach) == texel
+                && layerTexelAt(quad, a + reach, b + reach) == texel;
     }
 
     /**
