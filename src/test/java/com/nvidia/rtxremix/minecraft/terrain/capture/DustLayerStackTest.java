@@ -19,6 +19,7 @@ import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.function.IntBinaryOperator;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -47,6 +48,12 @@ class DustLayerStackTest {
             "################", "################", "################", "################",
             "################", "################", "################", "################",
             "################", "################", "################", "################"};
+    /** The most pieces a 16-texel layer can cut into: every texel its own run. */
+    private static final String[] CHECKER = {
+            "#.#.#.#.#.#.#.#.", ".#.#.#.#.#.#.#.#", "#.#.#.#.#.#.#.#.", ".#.#.#.#.#.#.#.#",
+            "#.#.#.#.#.#.#.#.", ".#.#.#.#.#.#.#.#", "#.#.#.#.#.#.#.#.", ".#.#.#.#.#.#.#.#",
+            "#.#.#.#.#.#.#.#.", ".#.#.#.#.#.#.#.#", "#.#.#.#.#.#.#.#.", ".#.#.#.#.#.#.#.#",
+            "#.#.#.#.#.#.#.#.", ".#.#.#.#.#.#.#.#", "#.#.#.#.#.#.#.#.", ".#.#.#.#.#.#.#.#"};
     /** Pack texels between the opaque and clear extremes, on the first row. */
     private static final String[] PARTLY_TRANSPARENT = {
             "+-..............", "................", "................", "................",
@@ -133,6 +140,9 @@ class DustLayerStackTest {
                 }
                 assertEquals("solid", surfaceOf(mesh, ChunkManager.CAT_SOLID).bucketKey());
                 assertEquals("cutout_sss", surfaceOf(mesh, ChunkManager.CAT_CUTOUT).bucketKey());
+                // The tinted line glows; the overlay its model leaves untinted does not.
+                assertEquals(RedstoneEmission.POWERED, surfaceOf(mesh, ChunkManager.CAT_SOLID).redstoneEmission());
+                assertEquals(RedstoneEmission.UNPOWERED, surfaceOf(mesh, ChunkManager.CAT_CUTOUT).redstoneEmission());
             } finally {
                 mesh.release();
             }
@@ -146,6 +156,112 @@ class DustLayerStackTest {
             try {
                 assertEquals(4, surfaceOf(mesh, ChunkManager.CAT_SOLID).vertexCount());
                 assertEquals(4, surfaceOf(mesh, ChunkManager.CAT_OVERLAY).vertexCount());
+            } finally {
+                mesh.release();
+            }
+        } finally {
+            writer.releaseBuffers();
+        }
+    }
+
+    @Test
+    void aStackLeftUncutKeepsItsOverlayAsADecal() {
+        var line = TerrainSpriteFixtures.sprite("redstone_dust_line0", 0, false, false);
+        var overlay = TerrainSpriteFixtures.animated(
+                TerrainSpriteFixtures.sprite("redstone_dust_overlay", 16, OVERLAY, false));
+        DirectQuadWriter writer = new DirectQuadWriter();
+        try {
+            writer.beginSection();
+            stage(writer, line, 0, 1, 0, 1, 1, LINE_TINT);
+            stage(writer, overlay, 0, 1, 0, 1, 1, UNTINTED);
+            writer.flushBlock(new TestTextures(line, overlay), RedstoneEmission.POWERED);
+            SectionMeshData mesh = writer.buildMeshData();
+            try {
+                assertEquals(4, surfaceOf(mesh, ChunkManager.CAT_SOLID).vertexCount());
+                assertEquals(4, surfaceOf(mesh, ChunkManager.CAT_OVERLAY).vertexCount());
+                assertEquals(RedstoneEmission.UNPOWERED, surfaceOf(mesh, ChunkManager.CAT_OVERLAY).redstoneEmission());
+            } finally {
+                mesh.release();
+            }
+        } finally {
+            writer.releaseBuffers();
+        }
+    }
+
+    @Test
+    void cutStacksStopAddingQuadsAtTheSectionBudget() {
+        var base = TerrainSpriteFixtures.sprite("redstone_dust_dot", 0, FULL, false);
+        var top = TerrainSpriteFixtures.sprite("redstone_dust_line0", 16, CHECKER, false);
+        TestTextures textures = new TestTextures(base, top);
+        DirectQuadWriter writer = new DirectQuadWriter();
+        try {
+            writer.beginSection();
+            int blocks = 300;
+            for (int block = 0; block < blocks; block++) {
+                stage(writer, base, 0, 1, 0, 1, 1, DOT_TINT);
+                stage(writer, top, 0, 1, 0, 1, 1, LINE_TINT);
+                writer.flushBlock(textures, RedstoneEmission.POWERED);
+            }
+            SectionMeshData mesh = writer.buildMeshData();
+            try {
+                // Each cut block draws 256 pieces in place of 2 quads; once the next would
+                // pass the section's 24576 extra quads, the rest keep their 2 quads.
+                int cutBlocks = 24576 / 254;
+                int quads = mesh.surfaces().stream().mapToInt(SectionMeshData.Surface::vertexCount).sum() / 4;
+                assertEquals(cutBlocks * 256 + (blocks - cutBlocks) * 2, quads);
+            } finally {
+                mesh.release();
+            }
+        } finally {
+            writer.releaseBuffers();
+        }
+    }
+
+    @Test
+    void aWallStackIsCutInTheWallsPlane() {
+        var line = TerrainSpriteFixtures.sprite("redstone_dust_line0", 0, LINE, false);
+        var overlay = TerrainSpriteFixtures.sprite("redstone_dust_overlay", 16, OVERLAY, false);
+        DirectQuadWriter writer = new DirectQuadWriter();
+        try {
+            writer.beginSection();
+            // Dust climbing a wall facing +x, its texture upright: v runs down the wall.
+            stageWall(writer, line, LINE_TINT);
+            stageWall(writer, overlay, UNTINTED);
+            writer.flushBlock(new TestTextures(line, overlay), RedstoneEmission.POWERED);
+            SectionMeshData mesh = writer.buildMeshData();
+            try {
+                int[][] drawn = drawnTints(mesh, Map.of(LINE_TINT, line, UNTINTED, overlay),
+                        8, 4, Z, WALL_Y, (a, b) -> a, (a, b) -> 16 - b);
+                for (int b = 0; b < 16; b++) {
+                    for (int a = 0; a < 16; a++) {
+                        int row = 15 - b;
+                        int expected = row == 0 ? UNTINTED : LINE[row].charAt(a) == '#' ? LINE_TINT : 0;
+                        assertEquals(expected, drawn[b][a], "texel " + a + "," + row);
+                    }
+                }
+            } finally {
+                mesh.release();
+            }
+        } finally {
+            writer.releaseBuffers();
+        }
+    }
+
+    @Test
+    void aStackSamplingPastItsSpriteIsLeftAsStaged() {
+        var dot = TerrainSpriteFixtures.sprite("redstone_dust_dot", 0, DOT, false);
+        var line = TerrainSpriteFixtures.sprite("redstone_dust_line0", 16, LINE, false);
+        DirectQuadWriter writer = new DirectQuadWriter();
+        try {
+            writer.beginSection();
+            stage(writer, dot, 0, 1, 0, 1, 1, DOT_TINT);
+            // Half the line samples the atlas beyond its sprite, at the line's own density.
+            stage(writer, line, 0, 1, 0, 1, 1, LINE_TINT, 0.5f, 1.5f, 0, 1, 0);
+            writer.flushBlock(new TestTextures(dot, line), RedstoneEmission.POWERED);
+            SectionMeshData mesh = writer.buildMeshData();
+            try {
+                assertEquals(1, mesh.surfaces().size());
+                assertEquals(8, mesh.surfaces().getFirst().vertexCount());
             } finally {
                 mesh.release();
             }
@@ -275,6 +391,18 @@ class DustLayerStackTest {
         }
     }
 
+    /** The wall's height in the section: on the texel grid, unlike dust lying on a floor. */
+    private static final float WALL_Y = 5;
+
+    /** Stages a full-block quad on a wall facing +x, u following z and v running down y. */
+    private static void stageWall(DirectQuadWriter writer, BlockTextureManager.SpriteEntry sprite, int color) {
+        float x = X + 0.0625f;
+        float[] positions = {x, WALL_Y, Z, x, WALL_Y, Z + 1, x, WALL_Y + 1, Z + 1, x, WALL_Y + 1, Z};
+        float[] uvs = {sprite.u0, sprite.v1, sprite.u1, sprite.v1, sprite.u1, sprite.v0, sprite.u0, sprite.v0};
+        writer.stageQuad(positions, uvs, 1, 0, 0, color, sprite.id,
+                sprite.u0, sprite.v0, sprite.u1, sprite.v1, "cutout");
+    }
+
     /** Stages an upward or downward quad over [x0, x1] by [z0, z1] of the block, UVs following x and z. */
     private static void stage(DirectQuadWriter writer, BlockTextureManager.SpriteEntry sprite,
                               float x0, float x1, float z0, float z1, float normalY, int color) {
@@ -299,39 +427,48 @@ class DustLayerStackTest {
                 sprite.u0, sprite.v0, sprite.u1, sprite.v1, "cutout");
     }
 
-    /**
-     * Rasterizes every drawn quad onto the block's 16x16 texel grid by its tint, failing if
-     * two quads cover one texel or a quad's UVs sample a texel other than the one it covers.
-     */
+    /** {@link #drawnTints} for a floor stack, whose u follows x and v follows z. */
     private static int[][] drawnTints(SectionMeshData mesh, Map<Integer, BlockTextureManager.SpriteEntry> spritesByTint) {
+        return drawnTints(mesh, spritesByTint, 0, 8, X, Z, (a, b) -> a, (a, b) -> b);
+    }
+
+    /**
+     * Rasterizes every drawn quad onto the block's 16x16 texel grid in the plane of two axes,
+     * read at byte offsets {@code aOffset} and {@code bOffset} of a vertex, by its tint. Fails
+     * if two quads cover one texel or a quad's UVs at its lowest corner miss the texel corner
+     * that {@code texelU} and {@code texelV} map that grid corner to.
+     */
+    private static int[][] drawnTints(SectionMeshData mesh, Map<Integer, BlockTextureManager.SpriteEntry> spritesByTint,
+                                      int aOffset, int bOffset, float originA, float originB,
+                                      IntBinaryOperator texelU, IntBinaryOperator texelV) {
         int[][] drawn = new int[16][16];
         for (var surface : mesh.surfaces()) {
             ByteBuffer vertices = surface.vertexBuffer();
             for (int quad = 0; quad < surface.vertexCount() / 4; quad++) {
-                float minX = Float.POSITIVE_INFINITY, maxX = Float.NEGATIVE_INFINITY;
-                float minZ = Float.POSITIVE_INFINITY, maxZ = Float.NEGATIVE_INFINITY;
+                float minA = Float.POSITIVE_INFINITY, maxA = Float.NEGATIVE_INFINITY;
+                float minB = Float.POSITIVE_INFINITY, maxB = Float.NEGATIVE_INFINITY;
                 float u = 0, v = 0;
                 for (int corner = 0; corner < 4; corner++) {
                     int offset = (quad * 4 + corner) * HardcodedVertex.STRIDE;
-                    float x = vertices.getFloat(offset), z = vertices.getFloat(offset + 8);
-                    if (x <= minX && z <= minZ) {
+                    float a = vertices.getFloat(offset + aOffset), b = vertices.getFloat(offset + bOffset);
+                    if (a <= minA && b <= minB) {
                         u = vertices.getFloat(offset + 24);
                         v = vertices.getFloat(offset + 28);
                     }
-                    minX = Math.min(minX, x); maxX = Math.max(maxX, x);
-                    minZ = Math.min(minZ, z); maxZ = Math.max(maxZ, z);
+                    minA = Math.min(minA, a); maxA = Math.max(maxA, a);
+                    minB = Math.min(minB, b); maxB = Math.max(maxB, b);
                 }
                 int tint = vertices.getInt(quad * 4 * HardcodedVertex.STRIDE + 32);
                 var sprite = spritesByTint.get(tint);
                 assertFalse(sprite == null, "unexpected tint " + Integer.toHexString(tint));
-                int x0 = Math.round((minX - X) * 16), x1 = Math.round((maxX - X) * 16);
-                int z0 = Math.round((minZ - Z) * 16), z1 = Math.round((maxZ - Z) * 16);
-                assertEquals(x0, Math.round((u - sprite.u0) / (sprite.u1 - sprite.u0) * 16));
-                assertEquals(z0, Math.round((v - sprite.v0) / (sprite.v1 - sprite.v0) * 16));
-                for (int z = z0; z < z1; z++) {
-                    for (int x = x0; x < x1; x++) {
-                        assertEquals(0, drawn[z][x], "texel " + x + "," + z + " drawn twice");
-                        drawn[z][x] = tint;
+                int a0 = Math.round((minA - originA) * 16), a1 = Math.round((maxA - originA) * 16);
+                int b0 = Math.round((minB - originB) * 16), b1 = Math.round((maxB - originB) * 16);
+                assertEquals(texelU.applyAsInt(a0, b0), Math.round((u - sprite.u0) / (sprite.u1 - sprite.u0) * 16));
+                assertEquals(texelV.applyAsInt(a0, b0), Math.round((v - sprite.v0) / (sprite.v1 - sprite.v0) * 16));
+                for (int b = b0; b < b1; b++) {
+                    for (int a = a0; a < a1; a++) {
+                        assertEquals(0, drawn[b][a], "texel " + a + "," + b + " drawn twice");
+                        drawn[b][a] = tint;
                     }
                 }
             }

@@ -123,7 +123,9 @@ Placed redstone dust glows while powered, from its own texture under vanilla's
 power tint, so a weak signal glows dimmer and unpowered dust not at all
 (`RedstoneEmission`). Every power level draws the same dust sprites, so the
 wire's power decides this rather than an `_s` map, and emission a pack
-authors for those sprites does not reach placed dust.
+authors for those sprites does not reach placed dust. Only the layers vanilla
+tints glow; a layer the model leaves untinted, such as the overlay, stays
+unlit.
 
 **A block light** is an analytic light placed in the world by a rule, with a
 shape, a position, a colour, and an intensity. The player can scale each kind

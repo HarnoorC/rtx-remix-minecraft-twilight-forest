@@ -54,8 +54,11 @@ public final class DirectQuadWriter {
      * a face's UVs toward their centre by a few hundredths of a texel.
      */
     private static final float CELL_SAMPLE_REACH = 0.8f;
-    /** How far, in texels, a quad's fourth UV may sit from the parallelogram of its other three. */
-    private static final float AFFINE_UV_TOLERANCE = 0.01f;
+    /**
+     * How far, in texels, a quad's fourth UV may sit from the parallelogram of its other three,
+     * or any UV outside its sprite.
+     */
+    private static final float UV_TOLERANCE = 0.01f;
     private static final float DECAL_OVERLAP_EPSILON = 1.0E-4f;
 
     /**
@@ -63,7 +66,14 @@ public final class DirectQuadWriter {
      * Used as the growth ceiling for bucket buffers, not for initial sizing.
      */
     private static final int MAX_SECTION_QUADS = 24576;
-    private static final int MAX_VERT_BUF_SIZE = MAX_SECTION_QUADS * 4 * STRIDE;
+    /**
+     * The quads that cutting dust stacks may add to a section beyond those it replaces. A
+     * stack that would exceed it is left uncut, so no bucket outgrows its ceiling.
+     */
+    private static final int MAX_CUT_EXTRA_QUADS = MAX_SECTION_QUADS;
+    private static final int MAX_VERT_BUF_SIZE = (MAX_SECTION_QUADS + MAX_CUT_EXTRA_QUADS) * 4 * STRIDE;
+    /** The colour of a quad its model leaves untinted. */
+    private static final int UNTINTED = 0xFFFFFFFF;
     /** Initial bucket capacity: 128 quads keeps small section buckets compact. */
     private static final int INITIAL_QUADS    = 128;
     private static final int INITIAL_VERT_SIZE = INITIAL_QUADS * 4 * STRIDE;       // 32 KB
@@ -236,6 +246,8 @@ public final class DirectQuadWriter {
 
     private final int[] stackMembers = new int[MAX_BLOCK_QUADS];
     private final int[] stackOwners = new int[MAX_STACK_RESOLUTION * MAX_STACK_RESOLUTION];
+    /** Quads that cut stacks have added to this section beyond the layers they replaced. */
+    private int sectionCutExtraQuads;
     private final float[] piecePos = new float[12];
     private final float[] pieceUvs = new float[8];
     private int stackAxisA, stackAxisB, stackResolution, stackColumns, stackRows;
@@ -257,6 +269,7 @@ public final class DirectQuadWriter {
     /** Resets all bucket buffers for a new section. */
     public void beginSection(int sectionMinX, int sectionMinY, int sectionMinZ) {
         for (BucketBuffer bb : bucketOrder) bb.reset();
+        sectionCutExtraQuads = 0;
         lastBucketCategory = -1;
         lastBucketKey = null;
         lastBucketEmission = null;
@@ -347,14 +360,12 @@ public final class DirectQuadWriter {
      */
     public void flushBlock(BlockTextureManager tex, RedstoneEmission redstoneEmission) {
         if (stageCount == 0) return;
-        boolean dust = redstoneEmission.isDust();
-        // Dust layers are cut apart below, so none of them stays over another as a decal.
-        detectOverlays(tex, !dust);
+        detectOverlays(tex);
 
         int solidType = BlockTextureManager.layerType("solid");
         classifyStagedQuads(solidType);
         discardDuplicateCutoutBackfaces();
-        if (dust) writeDustLayerStacks(tex, solidType, redstoneEmission);
+        if (redstoneEmission.isDust()) writeDustLayerStacks(tex, solidType, redstoneEmission);
 
         for (int i = 0; i < stageCount; i++) {
             if (stageDiscarded[i]) continue;
@@ -384,6 +395,9 @@ public final class DirectQuadWriter {
         }
         // Dust materials exist only for the alpha-tested and opaque layer types.
         RedstoneEmission emission = isBlendedLayer(layer) ? RedstoneEmission.NONE : redstoneEmission;
+        // Dust glows under vanilla's power tint; a layer its model leaves untinted, such as a
+        // pack's overlay, has no power colour to glow with.
+        if (emission == RedstoneEmission.POWERED && stageColor[i] == UNTINTED) emission = RedstoneEmission.UNPOWERED;
         return getBucket(cat, bk, emission);
     }
 
@@ -403,7 +417,9 @@ public final class DirectQuadWriter {
      * Remix continues a ray through a transparent alpha-tested texel from just past that
      * triangle's plane, so of overlapping coplanar layers only the first one a ray reaches is
      * ever seen: at a corner the full-block dot would hide the half-length lines under it.
-     * A stack that is not texel-aligned, axis-aligned rectangles is left as it was staged.
+     * A stack the cut cannot reproduce exactly (see {@link #resolveDustStack}), or one whose
+     * pieces would overrun the section's {@link #MAX_CUT_EXTRA_QUADS}, is left as it was
+     * staged, overlays included.
      */
     private void writeDustLayerStacks(BlockTextureManager tex, int solidType, RedstoneEmission redstoneEmission) {
         for (int first = 0; first < stageCount; first++) {
@@ -416,10 +432,18 @@ public final class DirectQuadWriter {
                 stageStacked[j] = true;
             }
             if (members < 2 || !resolveDustStack(members)) continue;
+            int extraQuads = countStackPieces() - members;
+            if (extraQuads > MAX_CUT_EXTRA_QUADS - sectionCutExtraQuads) continue;
+            sectionCutExtraQuads += Math.max(0, extraQuads);
 
             for (int k = 0; k < members; k++) {
                 int quad = stackMembers[k];
                 stageDiscarded[quad] = true;
+                // Cut layers no longer overlap, so none stays over another as a decal.
+                if (stageOverlay[quad]) {
+                    stageOverlay[quad] = false;
+                    classifyStagedQuad(quad, solidType);
+                }
                 BucketBuffer bb = bucketFor(quad, tex, solidType, redstoneEmission);
                 for (int y = 0; y < stackRows; y++) {
                     int row = y * stackColumns;
@@ -435,12 +459,27 @@ public final class DirectQuadWriter {
         }
     }
 
+    /** The pieces a resolved stack is drawn with: one per run of a single owner along a row. */
+    private int countStackPieces() {
+        int pieces = 0;
+        for (int y = 0; y < stackRows; y++) {
+            int previous = -1;
+            for (int x = 0; x < stackColumns; x++) {
+                int owner = stackOwners[y * stackColumns + x];
+                if (owner >= 0 && owner != previous) pieces++;
+                previous = owner;
+            }
+        }
+        return pieces;
+    }
+
     /**
      * Fills {@link #stackOwners} with, per texel cell, the index into {@link #stackMembers} of
      * the layer drawn there, or -1. Returns false when the stack cannot be cut on a grid: a
      * layer is animated, since one cut cannot follow every frame's transparency, or a cell
      * spans more than one texel of a layer, as when a model scales a sprite's UVs, or a layer's
-     * UVs are not affine across it, since pieces take their UVs from three of its corners.
+     * UVs are not affine across it, since pieces take their UVs from three of its corners, or
+     * leave its sprite, whose transparency is all the cut knows.
      */
     private boolean resolveDustStack(int members) {
         int first = stackMembers[0];
@@ -455,7 +494,7 @@ public final class DirectQuadWriter {
             int quad = stackMembers[k];
             BlockTextureManager.SpriteEntry sprite = stageSpriteEntry[quad];
             if (sprite == null || sprite.isAnimated() || !isAxisAlignedRectangle(quad, axisA, axisB)
-                    || !hasAffineUvs(quad, sprite)) return false;
+                    || !hasAffineUvsInSprite(quad, sprite)) return false;
             resolution = Math.max(resolution, sprite.texelWidth());
             for (int v = 0; v < 4; v++) {
                 float a = stagePos[quad * 12 + v * 3 + axisA];
@@ -517,16 +556,25 @@ public final class DirectQuadWriter {
     }
 
     /**
-     * Whether a quad's UVs form a parallelogram, so one affine mapping covers both of its
-     * triangles. Otherwise each triangle maps the texture its own way, and a piece cut from
-     * the quad could not reproduce either.
+     * Whether a quad's UVs form a parallelogram inside its sprite. A parallelogram means one
+     * affine mapping covers both of its triangles; otherwise each triangle maps the texture
+     * its own way, and a piece cut from the quad could not reproduce either.
      */
-    private boolean hasAffineUvs(int quad, BlockTextureManager.SpriteEntry sprite) {
+    private boolean hasAffineUvsInSprite(int quad, BlockTextureManager.SpriteEntry sprite) {
         int uv = quad * 8;
+        float texelsPerU = sprite.texelWidth() / (sprite.u1 - sprite.u0);
+        float texelsPerV = sprite.texelHeight() / (sprite.v1 - sprite.v0);
         float du = stageUvs[uv + 4] - (stageUvs[uv + 2] + stageUvs[uv + 6] - stageUvs[uv]);
         float dv = stageUvs[uv + 5] - (stageUvs[uv + 3] + stageUvs[uv + 7] - stageUvs[uv + 1]);
-        return Math.abs(du / (sprite.u1 - sprite.u0) * sprite.texelWidth()) <= AFFINE_UV_TOLERANCE
-                && Math.abs(dv / (sprite.v1 - sprite.v0) * sprite.texelHeight()) <= AFFINE_UV_TOLERANCE;
+        if (Math.abs(du * texelsPerU) > UV_TOLERANCE || Math.abs(dv * texelsPerV) > UV_TOLERANCE) return false;
+        for (int corner = 0; corner < 4; corner++) {
+            float u = stageUvs[uv + corner * 2], v = stageUvs[uv + corner * 2 + 1];
+            if ((sprite.u0 - u) * texelsPerU > UV_TOLERANCE || (u - sprite.u1) * texelsPerU > UV_TOLERANCE
+                    || (sprite.v0 - v) * texelsPerV > UV_TOLERANCE || (v - sprite.v1) * texelsPerV > UV_TOLERANCE) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static boolean onGrid(float coordinate, int resolution) {
@@ -606,20 +654,22 @@ public final class DirectQuadWriter {
     }
 
     private void classifyStagedQuads(int solidType) {
-        for (int i = 0; i < stageCount; i++) {
-            String layer = stageLayer[i];
-            int layerType = BlockTextureManager.layerType(layer);
-            BlockTextureManager.SpriteEntry sprite = stageSpriteEntry[i];
+        for (int i = 0; i < stageCount; i++) classifyStagedQuad(i, solidType);
+    }
 
-            if (stageOverlay[i]) {
-                stageCategory[i] = ChunkManager.CAT_OVERLAY;
-            } else if (isBlendedLayer(layer)) {
-                stageCategory[i] = ChunkManager.CAT_TRANSLUCENT;
-            } else if (layerType == solidType || (sprite != null && !sprite.hasTransparency)) {
-                stageCategory[i] = ChunkManager.CAT_SOLID;
-            } else {
-                stageCategory[i] = ChunkManager.CAT_CUTOUT;
-            }
+    private void classifyStagedQuad(int i, int solidType) {
+        String layer = stageLayer[i];
+        int layerType = BlockTextureManager.layerType(layer);
+        BlockTextureManager.SpriteEntry sprite = stageSpriteEntry[i];
+
+        if (stageOverlay[i]) {
+            stageCategory[i] = ChunkManager.CAT_OVERLAY;
+        } else if (isBlendedLayer(layer)) {
+            stageCategory[i] = ChunkManager.CAT_TRANSLUCENT;
+        } else if (layerType == solidType || (sprite != null && !sprite.hasTransparency)) {
+            stageCategory[i] = ChunkManager.CAT_SOLID;
+        } else {
+            stageCategory[i] = ChunkManager.CAT_CUTOUT;
         }
     }
 
@@ -756,7 +806,7 @@ public final class DirectQuadWriter {
 
     // --- overlay detection ---
 
-    private void detectOverlays(BlockTextureManager tex, boolean allowOverlays) {
+    private void detectOverlays(BlockTextureManager tex) {
         boolean hasCandidate = false;
         boolean hasBase = false;
         for (int i = 0; i < stageCount; i++) {
@@ -771,7 +821,7 @@ public final class DirectQuadWriter {
             hasCandidate |= needsBlend;
             hasBase |= !needsBlend;
         }
-        if (!allowOverlays || !hasCandidate || !hasBase) return;
+        if (!hasCandidate || !hasBase) return;
 
         for (int i = 0; i < stageCount; i++) {
             if (!stageNeedsAlphaBlend[i]) continue;
