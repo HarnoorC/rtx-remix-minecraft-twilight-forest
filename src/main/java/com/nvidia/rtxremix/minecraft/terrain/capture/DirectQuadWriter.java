@@ -54,6 +54,8 @@ public final class DirectQuadWriter {
      * a face's UVs toward their centre by a few hundredths of a texel.
      */
     private static final float CELL_SAMPLE_REACH = 0.8f;
+    /** How far, in texels, a quad's fourth UV may sit from the parallelogram of its other three. */
+    private static final float AFFINE_UV_TOLERANCE = 0.01f;
     private static final float DECAL_OVERLAP_EPSILON = 1.0E-4f;
 
     /**
@@ -437,7 +439,8 @@ public final class DirectQuadWriter {
      * Fills {@link #stackOwners} with, per texel cell, the index into {@link #stackMembers} of
      * the layer drawn there, or -1. Returns false when the stack cannot be cut on a grid: a
      * layer is animated, since one cut cannot follow every frame's transparency, or a cell
-     * spans more than one texel of a layer, as when a model scales a sprite's UVs.
+     * spans more than one texel of a layer, as when a model scales a sprite's UVs, or a layer's
+     * UVs are not affine across it, since pieces take their UVs from three of its corners.
      */
     private boolean resolveDustStack(int members) {
         int first = stackMembers[0];
@@ -451,7 +454,8 @@ public final class DirectQuadWriter {
         for (int k = 0; k < members; k++) {
             int quad = stackMembers[k];
             BlockTextureManager.SpriteEntry sprite = stageSpriteEntry[quad];
-            if (sprite == null || sprite.isAnimated() || !isAxisAlignedRectangle(quad, axisA, axisB)) return false;
+            if (sprite == null || sprite.isAnimated() || !isAxisAlignedRectangle(quad, axisA, axisB)
+                    || !hasAffineUvs(quad, sprite)) return false;
             resolution = Math.max(resolution, sprite.texelWidth());
             for (int v = 0; v < 4; v++) {
                 float a = stagePos[quad * 12 + v * 3 + axisA];
@@ -510,6 +514,19 @@ public final class DirectQuadWriter {
         boolean edge2AlongA = Math.abs(stagePos[p + 9 + axisB] - stagePos[p + axisB]) <= GRID_EPSILON;
         boolean edge2AlongB = Math.abs(stagePos[p + 9 + axisA] - stagePos[p + axisA]) <= GRID_EPSILON;
         return (edge1AlongA && edge2AlongB) || (edge1AlongB && edge2AlongA);
+    }
+
+    /**
+     * Whether a quad's UVs form a parallelogram, so one affine mapping covers both of its
+     * triangles. Otherwise each triangle maps the texture its own way, and a piece cut from
+     * the quad could not reproduce either.
+     */
+    private boolean hasAffineUvs(int quad, BlockTextureManager.SpriteEntry sprite) {
+        int uv = quad * 8;
+        float du = stageUvs[uv + 4] - (stageUvs[uv + 2] + stageUvs[uv + 6] - stageUvs[uv]);
+        float dv = stageUvs[uv + 5] - (stageUvs[uv + 3] + stageUvs[uv + 7] - stageUvs[uv + 1]);
+        return Math.abs(du / (sprite.u1 - sprite.u0) * sprite.texelWidth()) <= AFFINE_UV_TOLERANCE
+                && Math.abs(dv / (sprite.v1 - sprite.v0) * sprite.texelHeight()) <= AFFINE_UV_TOLERANCE;
     }
 
     private static boolean onGrid(float coordinate, int resolution) {

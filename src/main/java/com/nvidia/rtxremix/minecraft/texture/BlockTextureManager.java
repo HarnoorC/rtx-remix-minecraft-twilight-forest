@@ -226,6 +226,11 @@ public class BlockTextureManager {
             return pixW;
         }
 
+        /** The sprite's height in texels. */
+        public int texelHeight() {
+            return pixH;
+        }
+
         /**
          * Whether the sprite is animated. Its transparency is scanned from one frame only, so
          * it says nothing about the others.

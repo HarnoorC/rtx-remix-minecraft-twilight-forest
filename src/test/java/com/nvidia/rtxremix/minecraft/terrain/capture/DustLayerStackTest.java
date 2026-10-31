@@ -247,6 +247,34 @@ class DustLayerStackTest {
         }
     }
 
+    @Test
+    void aStackWithNonAffineUvsIsLeftAsStaged() {
+        var dot = TerrainSpriteFixtures.sprite("redstone_dust_dot", 0, DOT, false);
+        var line = TerrainSpriteFixtures.sprite("redstone_dust_line0", 16, LINE, false);
+        DirectQuadWriter writer = new DirectQuadWriter();
+        try {
+            writer.beginSection();
+            stage(writer, dot, 0, 1, 0, 1, 1, DOT_TINT);
+            // A rectangle whose third UV is pulled in from the sprite's corner, so its two
+            // triangles map the texture differently.
+            float[] positions = {X, Y, Z, X + 1, Y, Z, X + 1, Y, Z + 1, X, Y, Z + 1};
+            float du = line.u1 - line.u0, dv = line.v1 - line.v0;
+            float[] uvs = {line.u0, line.v0, line.u1, line.v0, line.u0 + 0.5f * du, line.v0 + dv, line.u0, line.v1};
+            writer.stageQuad(positions, uvs, 0, 1, 0, LINE_TINT, line.id,
+                    line.u0, line.v0, line.u1, line.v1, "cutout");
+            writer.flushBlock(new TestTextures(dot, line), RedstoneEmission.POWERED);
+            SectionMeshData mesh = writer.buildMeshData();
+            try {
+                assertEquals(1, mesh.surfaces().size());
+                assertEquals(8, mesh.surfaces().getFirst().vertexCount());
+            } finally {
+                mesh.release();
+            }
+        } finally {
+            writer.releaseBuffers();
+        }
+    }
+
     /** Stages an upward or downward quad over [x0, x1] by [z0, z1] of the block, UVs following x and z. */
     private static void stage(DirectQuadWriter writer, BlockTextureManager.SpriteEntry sprite,
                               float x0, float x1, float z0, float z1, float normalY, int color) {
