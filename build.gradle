@@ -238,17 +238,17 @@ def fabricTest = tasks.register('fabricTest', Test) {
     testClassesDirs = sourceSets.test.output.classesDirs
     classpath = sourceSets.test.runtimeClasspath - configurations.testRuntimeClasspath +
             configurations.fabricTestRuntime
-    filter {
-        includeTestsMatching 'com.nvidia.rtxremix.minecraft.terrain.capture.RemixRenderContextTest'
+    useJUnitPlatform {
+        includeTags 'fabric'
     }
-    useJUnitPlatform()
     systemProperty 'fabric.side', 'client'
 }
 
 test {
     dependsOn fabricTest
-    exclude '**/RemixRenderContextTest.class'
-    useJUnitPlatform()
+    useJUnitPlatform {
+        excludeTags 'fabric'
+    }
     // Pin the per-frame install cap so tests don't depend on the CPU count
     systemProperty 'rtxremix.chunk.maxInstalledColumnsPerFrame', '8'
 }
