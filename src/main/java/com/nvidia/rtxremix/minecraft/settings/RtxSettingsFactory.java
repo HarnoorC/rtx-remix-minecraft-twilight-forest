@@ -184,6 +184,9 @@ public final class RtxSettingsFactory {
         list.add(skyFloat(renderer, "sky.twilightAmbient", "rtxremix.setting.sky.twilightAmbient",
                 0.0, SkyRenderer.MAX_TWILIGHT_AMBIENT_STRENGTH,
                 SkyRenderer::getTwilightAmbientStrength, SkyRenderer::setTwilightAmbientStrength));
+        list.add(skyFloat(renderer, "sky.twilightMoon", "rtxremix.setting.sky.twilightMoon",
+                0.0, LightManager.MAX_TWILIGHT_MOON_INTENSITY,
+                LightManager::getTwilightMoonIntensity, LightManager::setTwilightMoonIntensity));
 
         for (BlockLightIntensityControls.Control control
                 : BlockLightIntensityControls.controls()) {

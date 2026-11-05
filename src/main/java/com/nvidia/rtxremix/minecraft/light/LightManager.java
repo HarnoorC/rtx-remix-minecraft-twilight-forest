@@ -94,6 +94,11 @@ public class LightManager {
     private static final float MIN_DIRECT_RADIANCE = 1.0e-6f;
     private static final float BASE_SUN_LUMINANCE = 30.0f;
     private static final float BASE_MOON_LUMINANCE = 0.06f;
+    /** Moonlight's cool tint, as fractions of its blue channel. */
+    private static final float MOON_TINT_R = 0.85f;
+    private static final float MOON_TINT_G = 0.9f;
+    /** Twilight Forest's fixed moon is its only directional light, so it is brighter. */
+    private static final float TWILIGHT_MOON_LUMINANCE = 0.3f;
     private static final float RAIN_SUN_LUMINANCE = 0.075f;
     private static final float THUNDER_SUN_LUMINANCE = 0.03f;
     private static final float RAIN_MOON_LUMINANCE = 0.0225f;
@@ -104,9 +109,12 @@ public class LightManager {
     public static final float THUNDER_SKY_INTENSITY = 0.8f;
     public static final float DEFAULT_SUN_INTENSITY = 1.0f;
     public static final float DEFAULT_MOON_INTENSITY = 1.0f;
+    public static final float DEFAULT_TWILIGHT_MOON_INTENSITY = 0.15f;
+    public static final float MAX_TWILIGHT_MOON_INTENSITY = 10.0f;
 
     private static float sunIntensity = DEFAULT_SUN_INTENSITY;
     private static float moonIntensity = DEFAULT_MOON_INTENSITY;
+    private static float twilightMoonIntensity = DEFAULT_TWILIGHT_MOON_INTENSITY;
 
     private final RemixRenderer renderer;
 
@@ -136,6 +144,10 @@ public class LightManager {
     private RemixLight sunLight;
     private RemixLight moonLight;
     private SkyLightState skyLightState = SkyLightState.empty();
+    /** The fixed-moon state is constant until its inputs change, so it is cached. */
+    private SkyLightState fixedMoonState;
+    private float[] fixedMoonStateDirection;
+    private float fixedMoonStateIntensity = Float.NaN;
     private Vec3d firstPersonShadowModelOffset = Vec3d.ZERO;
     private long lastEntityLightUpdateNanos;
 
@@ -158,6 +170,14 @@ public class LightManager {
 
     public static void setMoonIntensity(float value) {
         moonIntensity = value;
+    }
+
+    public static float getTwilightMoonIntensity() {
+        return twilightMoonIntensity;
+    }
+
+    public static void setTwilightMoonIntensity(float value) {
+        twilightMoonIntensity = Math.clamp(value, 0.0f, MAX_TWILIGHT_MOON_INTENSITY);
     }
 
     public SkyLightState getSkyLightState() {
@@ -1034,13 +1054,20 @@ public class LightManager {
     // ================================================================
 
     private void updateSkyLight(ClientWorld world) {
-        // Fixed skies have no celestial lights, even when their dimension pins the time.
-        skyLightState = SkyProfile.forWorld(world).hasCelestialLighting()
-                ? evaluateSkyLightState(
-                        world.getSkyAngle(0f),
-                        world.getRainGradient(0.0f),
-                        world.getThunderGradient(0.0f))
-                : SkyLightState.empty();
+        // Fixed skies have no clock-driven celestial lights, even when their dimension pins
+        // the time; a profile may instead hang a moon at an authored direction.
+        SkyProfile profile = SkyProfile.forWorld(world);
+        float[] fixedMoonDirection = profile.fixedMoonDirection();
+        if (profile.hasCelestialLighting()) {
+            skyLightState = evaluateSkyLightState(
+                    world.getSkyAngle(0f),
+                    world.getRainGradient(0.0f),
+                    world.getThunderGradient(0.0f));
+        } else if (fixedMoonDirection != null) {
+            skyLightState = cachedFixedMoonState(fixedMoonDirection);
+        } else {
+            skyLightState = SkyLightState.empty();
+        }
 
         try {
             sunLight = updateDistantLight(sunLight, skyLightState.sunPosition(), skyLightState.sunDirectRadiance(),
@@ -1092,7 +1119,7 @@ public class LightManager {
         float sunLuminance = BASE_SUN_LUMINANCE * sunIntensity;
         float moonLuminance = BASE_MOON_LUMINANCE * moonIntensity;
         float[] sunSource = {sunLuminance, sunLuminance, sunLuminance};
-        float[] moonSource = {moonLuminance * 0.85f, moonLuminance * 0.9f, moonLuminance};
+        float[] moonSource = tintedMoonRadiance(moonLuminance);
         float[] sunDirect = applyTransmittance(sunSource, directAtmosphereTransmittance(sunPosition[1]));
         float[] moonDirect = applyTransmittance(moonSource, directAtmosphereTransmittance(moonPosition[1]));
         sunDirect = scaleRadiance(sunDirect, weatherSunDirectScale(rainGradient, thunderGradient));
@@ -1103,6 +1130,36 @@ public class LightManager {
                 sunSource, moonSource,
                 thresholdDirectRadiance(sunDirect), thresholdDirectRadiance(moonDirect),
                 SUN_ANGULAR_RADIUS, MOON_ANGULAR_RADIUS);
+    }
+
+    private SkyLightState cachedFixedMoonState(float[] moonDirection) {
+        if (fixedMoonState == null
+                || fixedMoonStateDirection != moonDirection
+                || Float.compare(fixedMoonStateIntensity, twilightMoonIntensity) != 0) {
+            fixedMoonState = fixedMoonSkyLightState(moonDirection, twilightMoonIntensity);
+            fixedMoonStateDirection = moonDirection;
+            fixedMoonStateIntensity = twilightMoonIntensity;
+        }
+        return fixedMoonState;
+    }
+
+    /**
+     * A moon that stays at {@code moonDirection} with no sun. Its light skips atmospheric
+     * transmittance and weather, which belong to the generated overworld sky.
+     */
+    static SkyLightState fixedMoonSkyLightState(float[] moonDirection, float intensity) {
+        float[] moonPosition = moonDirection.clone();
+        float[] sunPosition = {-moonDirection[0], -moonDirection[1], -moonDirection[2]};
+        float[] moonSource = tintedMoonRadiance(TWILIGHT_MOON_LUMINANCE * Math.max(0.0f, intensity));
+        return new SkyLightState(
+                sunPosition, moonPosition,
+                new float[]{0.0f, 0.0f, 0.0f}, moonSource,
+                new float[]{0.0f, 0.0f, 0.0f}, thresholdDirectRadiance(moonSource.clone()),
+                SUN_ANGULAR_RADIUS, MOON_ANGULAR_RADIUS);
+    }
+
+    private static float[] tintedMoonRadiance(float luminance) {
+        return new float[]{luminance * MOON_TINT_R, luminance * MOON_TINT_G, luminance};
     }
 
     static float weatherSunDirectScale(float rainGradient, float thunderGradient) {
@@ -1238,6 +1295,9 @@ public class LightManager {
         }
 
         skyLightState = SkyLightState.empty();
+        fixedMoonState = null;
+        fixedMoonStateDirection = null;
+        fixedMoonStateIntensity = Float.NaN;
         LOGGER.info("Light manager cleared");
     }
 

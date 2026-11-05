@@ -37,12 +37,16 @@ This page shapes the sky's light and appearance, clouds, and block lights.
 Clouds still follow Minecraft's own cloud option: Off removes them regardless
 of the selected style, while Fast and Fancy draw the same geometry here.
 
-Twilight Forest uses a constant dark blue twilight dome with a dense, always-bright
-star field and no sun or moon lights.
+Twilight Forest uses a constant deep, dark blue twilight dome with a dense, always-bright
+star field and a crescent moon fixed high in the east-southeast sky. The dimension
+freezes its time at dusk, so the moon never moves; it casts directional moonlight
+and shadows the way the overworld's sun does, and there is no sun.
+**Twilight Moonlight** scales that light from 0 to 10, with 0.15 as the default.
+A value of 0 turns the light off while the moon stays visible.
 **Twilight Ambient** scales its overhead ambient area light from 0 to 10,
-with 1 as the default. It requires **Sky Ambient Light** to be enabled.
+with 5 as the default. It requires **Sky Ambient Light** to be enabled.
 A value of 0 removes the area light while the dome still provides sky radiance.
-The control applies immediately, is saved with the other settings, and affects
+Both controls apply immediately, are saved with the other settings, and affect
 only dimensions using Twilight Forest's `twilightforest:renderer` effects.
 
 **Block Lights** opens a table of multipliers for normal light brightness,

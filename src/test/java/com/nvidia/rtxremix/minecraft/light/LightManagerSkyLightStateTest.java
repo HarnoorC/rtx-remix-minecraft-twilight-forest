@@ -8,7 +8,9 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class LightManagerSkyLightStateTest {
 
@@ -59,6 +61,49 @@ class LightManagerSkyLightStateTest {
                 (rainMoon + thunderMoon) * 0.5f,
                 LightManager.weatherMoonDirectScale(1.0f, 0.5f),
                 1.0e-6f);
+    }
+
+    @Test
+    void fixedMoonLightsFromItsDirectionWithNoSun() {
+        float[] direction = {0.6f, 0.8f, 0.0f};
+
+        LightManager.SkyLightState state = LightManager.fixedMoonSkyLightState(direction, 1.0f);
+
+        assertArrayEquals(direction, state.moonPosition());
+        assertArrayEquals(new float[]{-0.6f, -0.8f, 0.0f}, state.sunPosition(), 1.0e-6f);
+        assertArrayEquals(new float[3], state.sunDirectRadiance());
+        assertArrayEquals(new float[3], state.sunSourceRadiance());
+        float[] moon = state.moonDirectRadiance();
+        assertTrue(moon[2] > 0.0f);
+        assertTrue(moon[2] >= moon[1] && moon[1] >= moon[0], "moonlight is cool");
+        direction[0] = 0.0f;
+        assertEquals(0.6f, state.moonPosition()[0], "state keeps its own copy");
+    }
+
+    @Test
+    void fixedMoonRadianceIsLinearInIntensityAndOffAtZero() {
+        float[] direction = {0.0f, 1.0f, 0.0f};
+        float[] one = LightManager.fixedMoonSkyLightState(direction, 1.0f).moonDirectRadiance();
+        float[] three = LightManager.fixedMoonSkyLightState(direction, 3.0f).moonDirectRadiance();
+
+        for (int channel = 0; channel < 3; channel++) {
+            assertEquals(one[channel] * 3.0f, three[channel], 1.0e-6f);
+        }
+        assertArrayEquals(new float[3],
+                LightManager.fixedMoonSkyLightState(direction, 0.0f).moonDirectRadiance());
+    }
+
+    @Test
+    void twilightMoonIntensityClampsToItsSliderRange() {
+        float original = LightManager.getTwilightMoonIntensity();
+        try {
+            LightManager.setTwilightMoonIntensity(-1.0f);
+            assertEquals(0.0f, LightManager.getTwilightMoonIntensity());
+            LightManager.setTwilightMoonIntensity(100.0f);
+            assertEquals(LightManager.MAX_TWILIGHT_MOON_INTENSITY, LightManager.getTwilightMoonIntensity());
+        } finally {
+            LightManager.setTwilightMoonIntensity(original);
+        }
     }
 
     private static LightManager.SkyLightState state(

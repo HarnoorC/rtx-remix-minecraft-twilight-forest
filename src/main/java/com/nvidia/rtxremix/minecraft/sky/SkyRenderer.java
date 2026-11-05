@@ -57,7 +57,9 @@ import java.util.List;
  * scattering, driven by Minecraft's time-of-day. Weather blends a static HDR
  * overcast dome over the atmospheric sky. Dimensions without a NORMAL sky publish a
  * constant dome instead: blue twilight for Twilight Forest, dark violet for the End,
- * and black with no sky ambient for a skyless dimension such as the Nether.
+ * and black with no sky ambient for a skyless dimension such as the Nether. Twilight
+ * Forest also draws a dense star field and a crescent moon fixed at its profile's
+ * direction, whose distant light {@link LightManager} publishes.
  */
 public class SkyRenderer {
 
@@ -81,6 +83,8 @@ public class SkyRenderer {
     private static final float MOON_HALF_SIZE = 20.0f;
     private static final float SUN_RADIANCE = 8.0f;
     private static final float MOON_RADIANCE = 0.2f;
+    private static final float TWILIGHT_MOON_HALF_SIZE = 16.0f;
+    private static final float TWILIGHT_MOON_RADIANCE = 0.3f;
     private static final float STAR_RADIANCE = 1.0f;
     private static final float STAR_DISTANCE_SCALE = 1.1f;
     private static final float CELESTIAL_HORIZON_FADE_DEGREES = 4.0f;
@@ -94,7 +98,7 @@ public class SkyRenderer {
     private static final float SKY_AMBIENT_RECT_Y = 325.0f;
     /** Sky ambient rect light: half-size in blocks, so it covers 8000 blocks from origin. */
     private static final float SKY_AMBIENT_RECT_HALF_SIZE = 8000.0f;
-    public static final float DEFAULT_TWILIGHT_AMBIENT_STRENGTH = 1.0f;
+    public static final float DEFAULT_TWILIGHT_AMBIENT_STRENGTH = 5.0f;
     public static final float MAX_TWILIGHT_AMBIENT_STRENGTH = 10.0f;
     public static final float DEFAULT_NIGHT_AMBIENT_BOOST = 2.5f;
     public static final float DEFAULT_DAY_AMBIENT_BOOST = 0.0f;
@@ -149,6 +153,9 @@ public class SkyRenderer {
     private RemixMesh sunMeshAsset;
     private final RemixMesh[] moonMeshAssets = new RemixMesh[8];
     private RemixMesh starMeshAsset;
+    private RemixTexture twilightMoonTextureAsset;
+    private RemixMaterial twilightMoonMaterialAsset;
+    private RemixMesh twilightMoonMeshAsset;
     private long celestialBlendPNext;
     private final AtmosphericSkyGenerator atmosphericGenerator;
     private final TexturePatch atmosphericTexturePatch = new TexturePatch();
@@ -231,6 +238,7 @@ public class SkyRenderer {
             renderFixedSky(api, fixedRadiance, profile.ambientMultiplier(twilightAmbientStrength));
             if (profile == SkyProfile.TWILIGHT_FOREST && ensureCelestialAssets()) {
                 renderStars(api, cameraPos, world.getSkyAngle(tickDelta), 1.0f, 0.0f);
+                renderFixedMoon(api, cameraPos, profile.fixedMoonDirection());
             }
         }
     }
@@ -614,9 +622,18 @@ public class SkyRenderer {
         drawCelestialMesh(api, starMeshAsset, starTransform);
     }
 
+    /** Draws the crescent at a direction that never changes with time or weather. */
+    private void renderFixedMoon(RemixAPI api, Vec3d cameraPos, float[] direction) {
+        if (direction == null || twilightMoonMeshAsset == null) return;
+        updateCelestialTransform(moonTransform, cameraPos, direction, TWILIGHT_MOON_HALF_SIZE);
+        drawCelestialMesh(api, twilightMoonMeshAsset, moonTransform);
+    }
+
     private boolean ensureCelestialAssets() {
+        boolean needsTwilightMoon = currentSkyProfile == SkyProfile.TWILIGHT_FOREST;
         if (starMeshAsset != null && sunMeshAsset != null
-                && moonMeshAssets[0] != null && celestialBlendPNext != 0) {
+                && moonMeshAssets[0] != null && celestialBlendPNext != 0
+                && (!needsTwilightMoon || twilightMoonMeshAsset != null)) {
             return true;
         }
         if (celestialInitializationFailed) {
@@ -651,6 +668,16 @@ public class SkyRenderer {
             starMeshAsset = createStarMesh(starMaterialAsset,
                     currentSkyProfile == SkyProfile.TWILIGHT_FOREST
                             ? TwilightStarField.create() : getVanillaStarVertices());
+            if (needsTwilightMoon) {
+                twilightMoonTextureAsset = createCelestialTexture(
+                        TwilightCrescent.create(TwilightCrescent.SIZE),
+                        TwilightCrescent.SIZE,
+                        TwilightCrescent.SIZE);
+                twilightMoonMaterialAsset = createCelestialMaterial(
+                        twilightMoonTextureAsset, TWILIGHT_MOON_RADIANCE);
+                twilightMoonMeshAsset = createCelestialMesh(
+                        twilightMoonMaterialAsset, 0.0f, 0.0f, 1.0f, 1.0f);
+            }
             celestialBlendPNext = CELESTIAL_BLEND.allocNative(0);
             lastSunOpacity = 1.0f;
             lastMoonOpacity = 1.0f;
@@ -687,7 +714,11 @@ public class SkyRenderer {
                 }
             }
         }
+        return createCelestialTexture(pixels, width, height);
+    }
 
+    /** Creates an RGBA8 colour texture over a pool buffer the texture then owns. */
+    private static RemixTexture createCelestialTexture(byte[] pixels, int width, int height) {
         ByteBuffer pixelBuffer = DirectBufferPool.acquire(pixels.length);
         pixelBuffer.put(pixels).flip();
         RemixTexture texture = new RemixTexture(
@@ -925,13 +956,17 @@ public class SkyRenderer {
         destroyAsset(sunMaterialAsset);
         destroyAsset(moonMaterialAsset);
         destroyAsset(starMaterialAsset);
+        destroyAsset(twilightMoonMaterialAsset);
         destroyAsset(sunTextureAsset);
         destroyAsset(moonTextureAsset);
+        destroyAsset(twilightMoonTextureAsset);
         sunMaterialAsset = null;
         moonMaterialAsset = null;
         starMaterialAsset = null;
+        twilightMoonMaterialAsset = null;
         sunTextureAsset = null;
         moonTextureAsset = null;
+        twilightMoonTextureAsset = null;
         lastSunOpacity = -1.0f;
         lastMoonOpacity = -1.0f;
         lastStarOpacity = -1.0f;
@@ -946,6 +981,8 @@ public class SkyRenderer {
         }
         destroyAsset(starMeshAsset);
         starMeshAsset = null;
+        destroyAsset(twilightMoonMeshAsset);
+        twilightMoonMeshAsset = null;
     }
 
     private static void destroyAsset(RemixAssetBase asset) {

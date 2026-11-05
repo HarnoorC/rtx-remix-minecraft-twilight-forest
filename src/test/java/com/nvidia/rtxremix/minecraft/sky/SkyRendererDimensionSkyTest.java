@@ -111,6 +111,28 @@ class SkyRendererDimensionSkyTest {
     }
 
     @Test
+    void onlyTwilightForestHangsAFixedMoonHighAndOffAxis() {
+        float[] moon = SkyProfile.TWILIGHT_FOREST.fixedMoonDirection();
+
+        assertEquals(1.0f, (float) Math.sqrt(moon[0] * moon[0] + moon[1] * moon[1] + moon[2] * moon[2]),
+                1.0e-6f);
+        assertTrue(moon[1] >= (float) Math.sin(Math.toRadians(30.0)),
+                "a moon near the horizon would barely light the forest floor");
+        assertTrue(moon[1] < 0.99f, "an overhead moon would cast no angled shadows");
+        for (SkyProfile profile : new SkyProfile[]{
+                SkyProfile.ATMOSPHERIC, SkyProfile.END, SkyProfile.SKYLESS}) {
+            assertNull(profile.fixedMoonDirection());
+        }
+    }
+
+    @Test
+    void moonDirectionMeasuresAzimuthClockwiseFromNorth() {
+        assertArrayEquals(new float[]{0.0f, 0.0f, -1.0f}, SkyProfile.moonDirection(0.0f, 0.0f), 1.0e-6f);
+        assertArrayEquals(new float[]{1.0f, 0.0f, 0.0f}, SkyProfile.moonDirection(0.0f, 90.0f), 1.0e-6f);
+        assertArrayEquals(new float[]{0.0f, 1.0f, 0.0f}, SkyProfile.moonDirection(90.0f, 45.0f), 1.0e-6f);
+    }
+
+    @Test
     void unknownEffectsKeepTheirSkyTypeAndIgnoreTwilightStrength() {
         Identifier otherEffects = Identifier.of("othermod", "renderer");
         assertSame(SkyProfile.ATMOSPHERIC,
