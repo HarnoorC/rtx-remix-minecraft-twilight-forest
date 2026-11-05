@@ -4,6 +4,7 @@
  */
 package com.nvidia.rtxremix.minecraft.terrain.capture;
 
+import net.fabricmc.fabric.api.renderer.v1.material.BlendMode;
 import net.fabricmc.fabric.api.renderer.v1.material.RenderMaterial;
 import net.fabricmc.fabric.api.renderer.v1.mesh.Mesh;
 import net.fabricmc.fabric.api.renderer.v1.mesh.MutableQuadView;
@@ -68,6 +69,25 @@ final class RemixRenderContext implements RenderContext {
 
     List<SectionBlockData.BlockQuad> harvest() {
         return List.copyOf(captured);
+    }
+
+    /**
+     * The terrain layer a quad's material asks for by
+     * {@code BlockTextureManager.layerType} name, or null when its blend mode is
+     * {@link BlendMode#DEFAULT} and the quad takes its block's layer. A model can
+     * set the blend mode itself instead of registering a block layer: Porting
+     * Lib's {@code CustomBlendModeModel} does this for a model JSON's
+     * {@code render_type}, as Twilight Forest's mayapple uses.
+     */
+    static @Nullable String layerForMaterial(@Nullable RenderMaterial material) {
+        if (material == null) return null;
+        return switch (material.blendMode()) {
+            case DEFAULT -> null;
+            case SOLID -> "solid";
+            case CUTOUT_MIPPED -> "cutout_mipped";
+            case CUTOUT -> "cutout";
+            case TRANSLUCENT -> "translucent";
+        };
     }
 
     // --- RenderContext ---
@@ -236,7 +256,7 @@ final class RemixRenderContext implements RenderContext {
                 capturedColor,
                 spriteId,
                 su0, sv0, su1, sv1,
-                "solid",
+                layerForMaterial(materialVal),
                 false, false
             ));
 

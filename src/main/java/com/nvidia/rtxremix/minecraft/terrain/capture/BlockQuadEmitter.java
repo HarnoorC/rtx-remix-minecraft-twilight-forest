@@ -530,10 +530,13 @@ public final class BlockQuadEmitter {
                 tempPositions[v * 3 + 2] = fqPos[v * 3 + 2] + lz;
             }
 
+            // A quad whose material names a blend mode keeps it, as Indigo
+            // does; the rest take the block's layer.
+            String quadLayer = fq.renderLayer() != null ? fq.renderLayer() : layerName;
             writer.stageQuad(tempPositions, fq.uvs(), fq.nx(), fq.ny(), fq.nz(),
                     fq.color(), fq.spriteId(),
                     fq.spriteU0(), fq.spriteV0(), fq.spriteU1(), fq.spriteV1(),
-                    layerName);
+                    quadLayer);
         }
 
         writer.flushBlock(texManager);

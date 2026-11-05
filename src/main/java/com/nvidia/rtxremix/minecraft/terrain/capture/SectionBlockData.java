@@ -61,7 +61,8 @@ public record SectionBlockData(
      * @param spriteV0    sprite atlas UV bounds min V
      * @param spriteU1    sprite atlas UV bounds max U
      * @param spriteV1    sprite atlas UV bounds max V
-     * @param renderLayer render layer name ("solid", "cutout", "cutout_mipped", "translucent")
+     * @param renderLayer render layer name ("solid", "cutout", "cutout_mipped", "translucent"),
+     *                    or null when the quad takes its block's layer
      * @param isOverlay   true if this quad is a decal overlay (transparent sprite on shared face)
      * @param isFluid     true if this quad belongs to a fluid (water, lava)
      */

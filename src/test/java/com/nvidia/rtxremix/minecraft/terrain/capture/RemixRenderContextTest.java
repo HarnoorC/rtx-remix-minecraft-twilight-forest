@@ -4,6 +4,8 @@
  */
 package com.nvidia.rtxremix.minecraft.terrain.capture;
 
+import net.fabricmc.fabric.api.renderer.v1.material.BlendMode;
+import net.fabricmc.fabric.api.renderer.v1.material.MaterialFinder;
 import net.fabricmc.fabric.api.renderer.v1.mesh.Mesh;
 import net.fabricmc.fabric.api.renderer.v1.mesh.QuadEmitter;
 import net.fabricmc.fabric.impl.client.indigo.renderer.IndigoRenderer;
@@ -19,6 +21,7 @@ import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -129,6 +132,42 @@ class RemixRenderContextTest {
         context.meshConsumer().accept(mesh);
         assertEquals(1, context.harvest().size());
         assertFalse(context.hasTransform());
+    }
+
+    @Test
+    void capturedQuadKeepsABlendModeItsModelSetsAndDefersOtherwise() {
+        MeshBuilderImpl builder = new MeshBuilderImpl();
+        builder.getEmitter().square(Direction.UP, 0, 0, 1, 1, 0).tag(1).emit();
+        builder.getEmitter().square(Direction.UP, 0, 0, 1, 1, 0).tag(2).emit();
+        Mesh mesh = builder.build();
+        RemixRenderContext context = context();
+        // As Porting Lib's CustomBlendModeModel applies a model JSON's render_type.
+        MaterialFinder finder = IndigoRenderer.INSTANCE.materialFinder();
+        context.pushTransform(quad -> {
+            if (quad.tag() == 1) {
+                quad.material(finder.copyFrom(quad.material()).blendMode(BlendMode.CUTOUT).find());
+            }
+            return true;
+        });
+
+        context.meshConsumer().accept(mesh);
+
+        assertEquals(2, context.harvest().size());
+        assertEquals("cutout", context.harvest().get(0).renderLayer());
+        assertNull(context.harvest().get(1).renderLayer());
+    }
+
+    @Test
+    void everyBlendModeNamesATerrainLayerOrDefers() {
+        MaterialFinder finder = IndigoRenderer.INSTANCE.materialFinder();
+        assertNull(RemixRenderContext.layerForMaterial(null));
+        assertNull(RemixRenderContext.layerForMaterial(finder.clear().blendMode(BlendMode.DEFAULT).find()));
+        assertEquals("solid", RemixRenderContext.layerForMaterial(finder.clear().blendMode(BlendMode.SOLID).find()));
+        assertEquals("cutout", RemixRenderContext.layerForMaterial(finder.clear().blendMode(BlendMode.CUTOUT).find()));
+        assertEquals("cutout_mipped",
+                RemixRenderContext.layerForMaterial(finder.clear().blendMode(BlendMode.CUTOUT_MIPPED).find()));
+        assertEquals("translucent",
+                RemixRenderContext.layerForMaterial(finder.clear().blendMode(BlendMode.TRANSLUCENT).find()));
     }
 
     private static RemixRenderContext context() {
