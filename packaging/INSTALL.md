@@ -194,6 +194,7 @@ The automated uninstall removes these:
 - `mods\rtx-remix-renderer-*.jar`
 - `mods\fabric-api-*.jar`, all of them in a Prism instance, and only the
   version the mod pins in the Microsoft launcher's shared `mods\` folder
+- `mods\twilightforest-*.jar`, scoped the same way as Fabric API
 - `remix-sdk\`
 - `rtx.conf`
 - `.rtx-remix-version`
@@ -230,6 +231,7 @@ if you are wiping it anyway.
 | `Download failed after 3 attempts from` followed by an Adoptium URL and the error details | The Adoptium API at `api.adoptium.net` has to be reachable. Check the firewall and re-run |
 | `Failed to extract JDK 21 archive:` followed by the error details | Check free disk space and the permissions on your temporary folder, then re-run the installer to download and extract a fresh archive |
 | The Fabric API download fails | `maven.fabricmc.net` has to be reachable. Check the firewall and re-run |
+| The Twilight Forest download fails | `mediafilez.forgecdn.net`, CurseForge's file server, has to be reachable. Check the firewall and re-run. A SHA-256 mismatch means the hosted file changed, and the installer refuses it |
 | The installer refuses to choose a launcher | Both Prism and the Microsoft launcher are installed and the run was headless. Pass `-Launcher Prism` or `-Launcher Microsoft` |
 
 Problems inside the game rather than inside the installer, such as a black

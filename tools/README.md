@@ -144,7 +144,7 @@ the second benchmarks a save you imported and recorded a camera for.
   `REMIX_ARCH` overrides host architecture, `REMIX_BUILD` selects a custom
   runtime, and `REMIX_FORCE_SDK_COPY=1` bypasses the runtime copy marker.
   Relative paths use the repository root. It neither builds nor launches
-  Minecraft and does not manage Fabric Loader or Fabric API.
+  Minecraft and does not manage Fabric Loader, Fabric API, or Twilight Forest.
 - `rtx.bat textures water-normals [--seed N] [--out PATH]` generates
   `water_normals_flipbook.dds` from code, by default under `build/textures/`:
   120 frames of a tiling ocean surface that loops every six seconds, packed

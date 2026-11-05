@@ -193,6 +193,17 @@ class BuildConfigurationTests(unittest.TestCase):
         self.assertIn("rename { 'fabric-api.jar' }", task.group(1))
         self.assertNotIn("The benchmark CLI passes", build)
 
+    def test_dev_instance_twilight_forest_is_the_pinned_verified_download(self):
+        build = (REPO_ROOT / "build.gradle").read_text(encoding="utf-8")
+        task = re.search(r"(?ms)^tasks.register\('stageTwilightForest'\) \{(.+?)^\}", build)
+        self.assertIsNotNone(task)
+        assert task is not None
+        body = task.group(1)
+        self.assertIn("layout.buildDirectory.file('dev/twilightforest.jar')", body)
+        self.assertIn("inputs.property('sha256', sha256)", body)
+        self.assertIn("MessageDigest.getInstance('SHA-256')", body)
+        self.assertIn("if (actual != sha256)", body)
+
 
 if __name__ == "__main__":
     unittest.main()

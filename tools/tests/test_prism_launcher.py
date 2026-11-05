@@ -177,6 +177,7 @@ def fake_gradle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> FakeGradle:
     jar = project / "build" / "dev" / "fabric-api.jar"
     jar.parent.mkdir(parents=True)
     jar.write_bytes(b"pinned fabric api")
+    (jar.parent / "twilightforest.jar").write_bytes(b"pinned twilight forest")
     monkeypatch.setattr(util, "PROJECT_DIR", project)
     fake = FakeGradle()
 
@@ -855,9 +856,31 @@ def test_prepare_installs_fabric_api_and_prunes_other_versions(launcher, fake_gr
     stale.parent.mkdir(parents=True)
     stale.write_bytes(b"x")
     launcher.prepare("win64", build=False)
-    assert fake_gradle.args[-2:] == ["stageFabricApi", "--quiet"]
+    assert fake_gradle.args[-3:] == ["stageFabricApi", "stageTwilightForest", "--quiet"]
     assert not stale.exists()
     assert (launcher.game_dir / "mods" / f"fabric-api-{prism.installer_constant('FABRIC_API_VERSION')}.jar").exists()
+
+
+def test_prepare_installs_the_pinned_twilight_forest_and_prunes_other_versions(launcher, fake_gradle):
+    mods = launcher.game_dir / "mods"
+    mods.mkdir(parents=True)
+    stale = mods / "twilightforest-fabric-1.21.1-4.8.700.jar"
+    stale.write_bytes(b"x")
+    unrelated = mods / "another-mod.jar"
+    unrelated.write_bytes(b"y")
+    launcher.prepare("win64", build=False)
+    assert not stale.exists()
+    assert unrelated.exists()
+    installed = mods / prism.installer_constant("TWILIGHT_FOREST_JAR")
+    assert installed.name == f"twilightforest-fabric-1.21.1-{prism.installer_constant('TWILIGHT_FOREST_VERSION')}.jar"
+    assert installed.read_bytes() == b"pinned twilight forest"
+
+
+def test_prepare_without_the_staged_twilight_forest_says_how_to_stage_it(launcher, fake_gradle):
+    (util.PROJECT_DIR / "build" / "dev" / "twilightforest.jar").unlink()
+    with pytest.raises(client.LaunchBlocked, match=r"Run gradlew\.bat stageTwilightForest"):
+        launcher.prepare("win64", build=False)
+    assert fake_gradle.installs == []
 
 
 def test_prepare_builds_probes_then_installs_into_the_instance(launcher, fake_gradle, monkeypatch):
@@ -871,6 +894,7 @@ def test_prepare_builds_probes_then_installs_into_the_instance(launcher, fake_gr
         "-x",
         "test",
         "stageFabricApi",
+        "stageTwilightForest",
         "-Parch=arm64",
         "--console=plain",
         "--quiet",

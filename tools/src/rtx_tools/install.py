@@ -109,6 +109,10 @@ def install_development_build(project_dir: Path, *, game_dir: Path | None = None
     if not any(mods.glob("fabric-api-*.jar")):
         print(f"WARNING: no fabric-api jar in {mods}.")
         print("         The mod requires fabric-api >=0.116.17+1.21.1 (https://modrinth.com/mod/fabric-api).")
+    if not any(mods.glob("twilightforest-*.jar")):
+        print(f"WARNING: no Twilight Forest jar in {mods}.")
+        print("         This build renders The Twilight Forest 4.8.754 for Fabric")
+        print("         (https://www.curseforge.com/minecraft/mc-mods/the-twilight-forest/files/9091040).")
 
     _stage_runtime(source, bridge, game_dir / "remix-sdk", selected_arch)
     packaging = project_dir / "packaging"

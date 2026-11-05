@@ -34,8 +34,8 @@ Quit closes at once, and a run given `-Mode` never waits.
 
 | Mode | What it does |
 |---|---|
-| Install | A fresh install, or a deliberate reinstall of the packaged files over an existing one. Sets up the launcher, the mod, and Fabric API. Baseline PBR textures are built into the JAR, and the mod unpacks its runtime textures on first launch. Safe to re-run: it does not wipe an already-extracted runtime or your conf payload |
-| Upgrade | Replaces the mod JAR and Fabric API. The new mod version refreshes `remix-sdk\`, `rtx.conf`, and the runtime textures on the next launch and adds conf profiles you do not have. Launcher config, JVM arguments, and options other than resource-pack ordering are preserved, and differing JVM arguments prompt before they are replaced. JVM arguments an earlier installer wrote are replaced without asking, in either launcher |
+| Install | A fresh install, or a deliberate reinstall of the packaged files over an existing one. Sets up the launcher, the mod, Fabric API, and Twilight Forest. Baseline PBR textures are built into the JAR, and the mod unpacks its runtime textures on first launch. Safe to re-run: it does not wipe an already-extracted runtime or your conf payload |
+| Upgrade | Replaces the mod JAR, Fabric API, and Twilight Forest. The new mod version refreshes `remix-sdk\`, `rtx.conf`, and the runtime textures on the next launch and adds conf profiles you do not have. Launcher config, JVM arguments, and options other than resource-pack ordering are preserved, and differing JVM arguments prompt before they are replaced. JVM arguments an earlier installer wrote are replaced without asking, in either launcher |
 | Repair | Reinstalls the packaged files through the same path as Install and Upgrade. If the `.rtx-remix-version` marker matches, it does not re-extract the runtime or conf payload, but a missing `rtx.conf` is restored on launch. Delete the marker and relaunch to force full extraction |
 | Uninstall | Removes the mod files listed in `README.md`, then offers to remove the installer-managed Java, the Prism portable, and the Prism instance, listing only those that exist. With both launchers holding the mod it asks Prism, Microsoft, or Both |
 | Export | Prism only. Zips the Prism instance into an archive another machine can drop into its own Prism `instances\` folder, stripping the paths listed under Privacy below |
@@ -195,7 +195,8 @@ one to run. Which it uses depends on the architecture and the launcher.
 
 Downloads are checked against a SHA-256 before use, using a checksum pinned by
 the installer or published by the dependency provider. This covers the JDK,
-Prism portable, Fabric installer, and Fabric API.
+Prism portable, Fabric installer, Fabric API, and Twilight Forest. Twilight
+Forest's host publishes no checksum, so its SHA-256 is always the pinned one.
 
 If neither source yields a hash, an unattended run refuses to continue. An
 interactive run asks if an offered checksum file is unreachable or malformed;

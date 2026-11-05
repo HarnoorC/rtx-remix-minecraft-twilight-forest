@@ -84,7 +84,10 @@ Microsoft account.
 
 If you already run a Fabric instance for Minecraft 1.21.1 in a launcher of
 your choice, you can install the mod by hand. The instance needs Java 21,
-Fabric Loader 0.17.0 or newer, and Fabric API 0.116.17+1.21.1 or newer.
+Fabric Loader 0.17.0 or newer, Fabric API 0.116.17+1.21.1 or newer, and
+The Twilight Forest 4.8.754 for Fabric
+([CurseForge file 9091040](https://www.curseforge.com/minecraft/mc-mods/the-twilight-forest/files/9091040)),
+which the installer downloads for you.
 
 1. Copy the JAR from the archive's `mods\` folder into the instance's `mods\`
    folder. It carries the runtime and its textures and unpacks them into the

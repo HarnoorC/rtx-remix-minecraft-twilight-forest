@@ -208,7 +208,16 @@ loom {
 // serves both the compile dependency and stageFabricApi.
 def fabricApiCoordinate = "net.fabricmc.fabric-api:fabric-api:0.116.17+1.21.1"
 
-def fabricLoaderVersion = '0.17.0'
+def fabricLoaderVersion = "0.17.0"
+
+// Twilight Forest, the mod this branch renders. Keep in sync with
+// TWILIGHT_FOREST_* in packaging/installer.ps1, which installs the same file on
+// the user's machine. TeamTwilight's Maven skips 4.8.754, so the pinned file is
+// CurseForge file 9091040, fetched from its public CDN and checked against the
+// pinned SHA-256 because the CDN publishes no checksum.
+def twilightForestVersion = "4.8.754"
+def twilightForestUrl = "https://mediafilez.forgecdn.net/files/9091/40/twilightforest-fabric-1.21.1-4.8.754.jar"
+def twilightForestSha256 = "7f4bf512341bda95eeec0343d1233e8ef733ea599f489d60b27db13b2226fb42"
 
 configurations {
     fabricTestRuntime {
@@ -468,6 +477,49 @@ tasks.register('stageFabricApi', Copy) {
     from configurations.detachedConfiguration(dependencies.create(fabricApiCoordinate)).tap { transitive = false }
     into layout.buildDirectory.dir('dev')
     rename { 'fabric-api.jar' }
+}
+
+// The development launcher instance runs Twilight Forest, so it gets the pinned
+// jar the release installer downloads. Up to date while the staged file and the
+// pins are unchanged, so a launch only downloads it once.
+tasks.register('stageTwilightForest') {
+    description = "Downloads Twilight Forest ${twilightForestVersion} to build/dev/ for development launcher instances"
+    group = 'build'
+    def url = twilightForestUrl
+    def sha256 = twilightForestSha256
+    def target = layout.buildDirectory.file('dev/twilightforest.jar')
+    inputs.property('url', url)
+    inputs.property('sha256', sha256)
+    outputs.file(target)
+    doLast {
+        File jar = target.get().asFile
+        jar.parentFile.mkdirs()
+        File partial = new File(jar.parentFile, jar.name + '.part')
+        def digest = java.security.MessageDigest.getInstance('SHA-256')
+        try {
+            def connection = URI.create(url).toURL().openConnection()
+            connection.setRequestProperty('User-Agent', 'rtx-remix-minecraft build')
+            connection.connectTimeout = 30_000
+            connection.readTimeout = 60_000
+            connection.inputStream.withCloseable { input ->
+                partial.withOutputStream { output ->
+                    new java.security.DigestInputStream(input, digest).transferTo(output)
+                }
+            }
+        } catch (IOException e) {
+            partial.delete()
+            throw new GradleException("Could not download Twilight Forest from ${url}: ${e.message}", e)
+        }
+        String actual = digest.digest().encodeHex().toString()
+        if (actual != sha256) {
+            partial.delete()
+            throw new GradleException("Twilight Forest from ${url} has SHA-256 ${actual}, " +
+                    "not the pinned ${sha256}. The file may have changed upstream; " +
+                    'verify it before updating the pin here and in packaging/installer.ps1.')
+        }
+        java.nio.file.Files.move(partial.toPath(), jar.toPath(),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+    }
 }
 
 // build_native.bat writes the bridge to build/native/{win64|arm64}/, NOT into

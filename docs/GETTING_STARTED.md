@@ -163,7 +163,8 @@ The Java wrapper and JNI bridge are tracked under `rtxremix-java/` and arrive
 with the clone; no recursive checkout or hook setup is needed.
 
 `tools\rtx.bat launch` fetches a missing runtime and builds the mod and bridge
-with Gradle. It installs the mod, the pinned Fabric API, the runtime,
+with Gradle. It installs the mod, the pinned Fabric API and Twilight Forest
+(`stageFabricApi` and `stageTwilightForest`), the runtime,
 `rtx.conf`, the gameplay conf payload, and the runtime textures into this
 checkout's Prism instance, then starts Minecraft at the main menu through
 Prism and waits until the game exits. Prism's own console output stays out of
@@ -260,8 +261,9 @@ validation of native integration.
 
 The JAR from `package` is the one players get: it embeds the runtime, gameplay
 conf payload, runtime textures, and baseline PBR textures. To try it in a
-normal installation of Minecraft 1.21.1 that already has Fabric Loader and
-Fabric API, drop it into the instance's `mods` folder; nothing else is needed.
+normal installation of Minecraft 1.21.1 that already has Fabric Loader,
+Fabric API, and Twilight Forest 4.8.754, drop it into the instance's `mods`
+folder; nothing else is needed.
 The release archive's installer also migrates old generated baseline packs and
 preserves user-pack ordering.
 
@@ -355,8 +357,9 @@ it. Build, then install from the repository root:
 ```
 
 The CLI bootstrap manages uv and its Python environment. The target installation
-must already have a compatible Fabric Loader profile and Fabric API. The command
-warns if Fabric API is missing; it does not install Fabric or launch Minecraft.
+must already have a compatible Fabric Loader profile, Fabric API, and Twilight
+Forest. The command warns if Fabric API or Twilight Forest is missing; it does
+not install them or launch Minecraft.
 Add `--game-dir DIR` to select another installation and `--arch win64` or
 `--arch arm64` to select its architecture. Relative paths use the repository
 root. Without `--arch`, `REMIX_ARCH` wins, then the host architecture.

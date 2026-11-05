@@ -34,5 +34,8 @@
         "fabric-api": ">=0.116.17+1.21.1",
         "minecraft": "1.21.1",
         "java": ">=21"
+    },
+    "recommends": {
+        "twilightforest": ">=4.8.754"
     }
 }

@@ -250,13 +250,34 @@ class PrismLauncher:
         project = util.PROJECT_DIR
         gradle = [str(project / "gradlew.bat")]
         if build:
-            gradle += ["build", "-x", "test", "stageFabricApi", f"-Parch={arch}", "--console=plain", "--quiet"]
+            gradle += [
+                "build",
+                "-x",
+                "test",
+                "stageFabricApi",
+                "stageTwilightForest",
+                f"-Parch={arch}",
+                "--console=plain",
+                "--quiet",
+            ]
         else:
-            gradle += ["stageFabricApi", "--quiet"]
+            gradle += ["stageFabricApi", "stageTwilightForest", "--quiet"]
         util.run(gradle, cwd=project, env=runner.gradle_env())
         self._runtime_probe = runtime_compat.warn_if_incompatible(project, arch)
-        # Before the install, which warns about a mods folder without Fabric API.
-        self._install_fabric_api(project / "build" / "dev" / "fabric-api.jar")
+        # Before the install, which warns about a mods folder without Fabric API or Twilight Forest.
+        dev = project / "build" / "dev"
+        self._install_pinned_mod(
+            dev / "fabric-api.jar",
+            "stageFabricApi",
+            "fabric-api-*.jar",
+            f"fabric-api-{prism.installer_constant('FABRIC_API_VERSION')}.jar",
+        )
+        self._install_pinned_mod(
+            dev / "twilightforest.jar",
+            "stageTwilightForest",
+            "twilightforest-*.jar",
+            prism.installer_constant("TWILIGHT_FOREST_JAR"),
+        )
         if install.install_development_build(project, game_dir=self.game_dir, arch=arch) != 0:
             raise LaunchBlocked(f"Could not install the development build into {self.game_dir}; see the errors above.")
 
@@ -444,18 +465,20 @@ class PrismLauncher:
             )
         return home / "bin" / "javaw.exe"
 
-    def _install_fabric_api(self, jar: Path) -> None:
+    def _install_pinned_mod(self, jar: Path, stage_task: str, pattern: str, name: str) -> None:
+        """Copy a jar Gradle staged into the instance's mods as `name`, removing every other version matching
+        `pattern`; the instance belongs to this checkout, so no other profile shares its mods."""
         if not jar.is_file():
             raise LaunchBlocked(
-                f"{jar} is missing. Run gradlew.bat stageFabricApi in the checkout, which writes it, and fix any "
+                f"{jar} is missing. Run gradlew.bat {stage_task} in the checkout, which writes it, and fix any "
                 "errors it reports, then run the command again."
             )
         mods = self.game_dir / "mods"
-        target = mods / f"fabric-api-{prism.installer_constant('FABRIC_API_VERSION')}.jar"
+        target = mods / name
         path = mods
         try:
             mods.mkdir(parents=True, exist_ok=True)
-            for path in [other for other in mods.glob("fabric-api-*.jar") if other != target]:
+            for path in [other for other in mods.glob(pattern) if other != target]:
                 path.unlink()
             path = target
             shutil.copy2(jar, target)

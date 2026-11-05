@@ -75,6 +75,7 @@ def test_install_stages_complete_development_payload(installation, capsys, arch)
     existing = {
         "mods/rtx-remix-renderer-old.jar": b"old mod",
         "mods/fabric-api-0.116.17+1.21.1.jar": b"fabric api",
+        "mods/twilightforest-fabric-1.21.1-4.8.754.jar": b"twilight forest",
         "mods/another-mod.jar": b"another mod",
         "remix-sdk/stale.dll": b"stale SDK",
         "rtx-remix/mods/minecraft-logic/weather/rain.conf": b"edited shipped rain",
@@ -92,6 +93,7 @@ def test_install_stages_complete_development_payload(installation, capsys, arch)
     expected = {
         "mods/rtx-remix-renderer.jar": b"newest mod",
         "mods/fabric-api-0.116.17+1.21.1.jar": b"fabric api",
+        "mods/twilightforest-fabric-1.21.1-4.8.754.jar": b"twilight forest",
         "mods/another-mod.jar": b"another mod",
         "remix-sdk/d3d9.dll": f"{arch} runtime".encode(),
         "remix-sdk/dxvk.conf": b"runtime config",
@@ -166,6 +168,17 @@ def test_install_warns_about_missing_fabric_api_without_installing_it(installati
     assert f"WARNING: no fabric-api jar in {game / 'mods'}." in output
     assert "fabric-api >=0.116.17+1.21.1 (https://modrinth.com/mod/fabric-api)" in output
     assert list((game / "mods").glob("fabric-api-*.jar")) == []
+
+
+def test_install_warns_about_missing_twilight_forest_without_installing_it(installation, capsys):
+    _, game = installation
+
+    assert run_install(game) == 0
+
+    output = capsys.readouterr().out
+    assert f"WARNING: no Twilight Forest jar in {game / 'mods'}." in output
+    assert "The Twilight Forest 4.8.754 for Fabric" in output
+    assert list((game / "mods").glob("twilightforest-*.jar")) == []
 
 
 @pytest.mark.parametrize("arch", ["win64", "arm64"])

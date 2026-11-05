@@ -144,6 +144,13 @@ $script:FABRIC_API_VERSION   = '0.116.17+1.21.1'
 $script:FABRIC_LOADER_VER    = '0.17.0'
 $script:MC_VERSION           = '1.21.1'
 $script:FABRIC_INSTALLER_VER = '1.0.1'
+# Twilight Forest, the mod this build renders. KEEP IN SYNC WITH the
+# twilightForest* pins in build.gradle. TeamTwilight's Maven skips 4.8.754, so
+# this is CurseForge file 9091040 on its public CDN, which publishes no
+# checksum; the pinned SHA-256 below is the only integrity check.
+$script:TWILIGHT_FOREST_VERSION = '4.8.754'
+$script:TWILIGHT_FOREST_JAR     = 'twilightforest-fabric-1.21.1-4.8.754.jar'
+$script:TWILIGHT_FOREST_URL     = 'https://mediafilez.forgecdn.net/files/9091/40/twilightforest-fabric-1.21.1-4.8.754.jar'
 # Fabric installer 1.0.x writes launcher_profiles.json using an MC-only
 # profile key, but the underlying `versions/` directory name (and the
 # profile's inner `lastVersionId` field) still include the loader version.
@@ -215,6 +222,7 @@ $script:PRISM_KNOWN_HASHES = @{
 # and paste below. Update when bumping the VER constants above.
 $script:FABRIC_INSTALLER_SHA256 = ''
 $script:FABRIC_API_SHA256       = ''
+$script:TWILIGHT_FOREST_SHA256  = '7f4bf512341bda95eeec0343d1233e8ef733ea599f489d60b27db13b2226fb42'
 
 # Minimum Prism Launcher version we'll install as a fresh portable. Prism
 # 9.0's official release notes tagged the Windows MSVC portable asset as
@@ -1312,8 +1320,9 @@ function Write-DetectedStateBlock {
         }
     }
 
-    # Fabric API version pin
+    # Fabric API and Twilight Forest version pins
     Write-Host "$(_fmtKey 'Fabric API:')$($script:FABRIC_API_VERSION)"
+    Write-Host "$(_fmtKey 'Twilight:')$($script:TWILIGHT_FOREST_VERSION)"
 }
 
 # --- Install / Upgrade implementation ---
@@ -2459,6 +2468,47 @@ function Install-FabricApi {
     Write-Info "Installed $desired"
 }
 
+function Install-TwilightForest {
+    <#
+      Same scoping as Install-FabricApi. Prism (isolated instance): prune every
+      other twilightforest-*.jar after the pinned one is in place. Microsoft
+      launcher (shared .minecraft/mods): install ours and leave other files
+      alone, but warn, because Fabric refuses to start with two copies of one
+      mod. Stale copies are removed only after a verified download, so a failed
+      upgrade leaves the previous version working.
+    #>
+    param([string]$McDir, [ValidateSet('Prism','Microsoft')] [string]$Launcher)
+    $desired = $script:TWILIGHT_FOREST_JAR
+    $mods    = Join-Path $McDir 'mods'
+    $target  = Join-Path $mods $desired
+    if (-not (Test-Path -LiteralPath $mods)) { New-Item -ItemType Directory -Path $mods | Out-Null }
+
+    $staleJars = @(Get-ChildItem -LiteralPath $mods -Filter 'twilightforest-*.jar' -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -ne $desired })
+
+    if (Test-Path -LiteralPath $target) {
+        Write-Info "Twilight Forest already at desired version: $desired"
+    } else {
+        $tmp = New-SessionTempPath "$desired.part"
+        Write-Info "Downloading Twilight Forest $($script:TWILIGHT_FOREST_VERSION)..."
+        try {
+            Invoke-VerifiedDownload -Url $script:TWILIGHT_FOREST_URL -Destination $tmp -ExpectedSha256 $script:TWILIGHT_FOREST_SHA256
+        } catch {
+            Write-Err "Twilight Forest download failed: $($script:TWILIGHT_FOREST_URL)"
+            Write-Err 'Existing twilightforest-*.jar (if any) left untouched.'
+            throw
+        }
+        Move-Item -LiteralPath $tmp -Destination $target -Force
+        Write-Info "Installed $desired"
+    }
+
+    if ($Launcher -eq 'Prism') {
+        $staleJars | ForEach-Object { Write-Info "Removing other Twilight Forest: $($_.Name)"; Remove-Item -LiteralPath $_.FullName -Force }
+    } elseif ($staleJars.Count -gt 0) {
+        Write-Warn "Left $($staleJars.Count) other twilightforest-*.jar file(s) in $mods (shared with your other profiles). Fabric will not start with two Twilight Forest versions in one mods folder; remove the ones you no longer use."
+    }
+}
+
 function Get-ServersDatHosts {
     <#
       Parse a Minecraft servers.dat (NBT, big-endian, uncompressed) and
@@ -2746,6 +2796,9 @@ function Invoke-InstallOrUpgrade {
     Write-Step 'Configuring Fabric API'
     Install-FabricApi -McDir $mcDir -Launcher $launcher
 
+    Write-Step 'Installing Twilight Forest'
+    Install-TwilightForest -McDir $mcDir -Launcher $launcher
+
     # A server entry is added only when -DevServer names a host. An existing
     # populated servers.dat is never merged into.
     $serversDatPath = Join-Path $mcDir 'servers.dat'
@@ -2961,6 +3014,7 @@ function Invoke-Uninstall {
         Write-Host '  The following will be removed from each target:'
         Write-Host "    - $($script:C_DIM)<mc>/mods/rtx-remix-renderer-*.jar$($script:C_RESET)"
         Write-Host "    - $($script:C_DIM)<mc>/mods/fabric-api-$($script:FABRIC_API_VERSION).jar$($script:C_RESET) (Microsoft: only our exact version; Prism: all fabric-api-*)"
+        Write-Host "    - $($script:C_DIM)<mc>/mods/$($script:TWILIGHT_FOREST_JAR)$($script:C_RESET) (Microsoft: only our exact version; Prism: all twilightforest-*)"
         Write-Host "    - $($script:C_DIM)<mc>/remix-sdk/, <mc>/rtx.conf, <mc>/.rtx-remix-version$($script:C_RESET)"
         Write-Host "    - $($script:C_DIM)<mc>/textures/water_normals_flipbook.dds, <mc>/textures/overcast_thunderstorm_bc6u.dds$($script:C_RESET)"
         Write-Host "    - $($script:C_DIM)<mc>/resourcepacks/RtxRemix-LabPBR/$($script:C_RESET) (if left by an earlier version)"
@@ -3050,6 +3104,14 @@ function Remove-ModArtifacts {
     } else {
         $fabricJar = Join-Path $McDir "mods\fabric-api-$($script:FABRIC_API_VERSION).jar"
         if (Test-Path -LiteralPath $fabricJar) { Write-Info "Removing fabric-api-$($script:FABRIC_API_VERSION).jar"; Remove-Item -LiteralPath $fabricJar -Force }
+    }
+    # Twilight Forest follows the same scoping as Fabric API.
+    if ($Launcher -eq 'Prism') {
+        Get-ChildItem -LiteralPath (Join-Path $McDir 'mods') -Filter 'twilightforest-*.jar' -ErrorAction SilentlyContinue |
+            ForEach-Object { Write-Info "Removing $($_.Name)"; Remove-Item -LiteralPath $_.FullName -Force }
+    } else {
+        $twilightJar = Join-Path $McDir "mods\$($script:TWILIGHT_FOREST_JAR)"
+        if (Test-Path -LiteralPath $twilightJar) { Write-Info "Removing $($script:TWILIGHT_FOREST_JAR)"; Remove-Item -LiteralPath $twilightJar -Force }
     }
     foreach ($path in @(
         (Join-Path $McDir 'remix-sdk')
