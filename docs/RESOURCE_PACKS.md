@@ -120,12 +120,14 @@ light sampling. The mod turns the pack's authored lantern emission up 2.5x and
 gives a waterlogged sea pickle a glowing sprout tip when the pack authors none;
 an `_s` with emission for the pickle replaces that (`BuiltinEmission`).
 Placed redstone dust glows while powered, from its own texture under vanilla's
-power tint, so a weak signal glows dimmer and unpowered dust not at all
+power tint, then scaled by the signal strength over 15, so a full signal stays
+at that tint and a weak signal falls further. Unpowered dust does not glow
 (`RedstoneEmission`). Every power level draws the same dust sprites, so the
 wire's power decides this rather than an `_s` map, and emission a pack
 authors for those sprites does not reach placed dust. Only the layers vanilla
-tints glow; a layer the model leaves untinted, such as the overlay, stays
-unlit.
+tints glow. A layer the model leaves untinted, such as the overlay, stays
+unlit, and so does a layer the cut cannot split, which would otherwise light
+the whole block face.
 
 **A block light** is an analytic light placed in the world by a rule, with a
 shape, a position, a colour, and an intensity. The player can scale each kind
