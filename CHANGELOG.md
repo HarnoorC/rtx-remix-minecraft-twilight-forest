@@ -11,6 +11,14 @@ also part of every mod file name.
 
 ## Unreleased
 
+### Fixed
+
+- Powered redstone dust from a 128x pack is cut, so a crossing does not glow
+  as a solid square. A layer the cut cannot split stays dark instead of
+  lighting the whole block face. The glow scales with the signal strength
+  over 15, so a full signal stays at full brightness and a weak signal falls
+  past vanilla's red floor.
+
 ## 0.1.0 - 2026-10-23
 
 The first public release, a beta.

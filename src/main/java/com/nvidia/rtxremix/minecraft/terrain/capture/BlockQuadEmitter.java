@@ -361,7 +361,7 @@ public final class BlockQuadEmitter {
         } else {
             emitVanillaBlock(world, state, model, layerName, lx, ly, lz);
         }
-        writer.flushBlock(texManager, RedstoneEmission.of(state));
+        writer.flushBlock(texManager, RedstoneEmission.of(state), RedstoneEmission.powerOf(state));
     }
 
     /**
